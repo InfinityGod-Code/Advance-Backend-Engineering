@@ -83,9 +83,11 @@ async def transfer(
         )
 
 
+
+'''Therefore with the safepoint instead of rollback entire transaction we can handle that 
+particular non-critical error.'''
 @router.post(
     "/transfer-with-loyalty",
-    response_model=dict,
     status_code=status.HTTP_200_OK,
     summary="Transfer with Loyalty Bonus using Savepoints",
     description=(

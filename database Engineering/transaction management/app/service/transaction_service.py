@@ -1,10 +1,14 @@
 from decimal import Decimal
+from uuid import uuid4
 from sqlmodel import select
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
 from app.models.m_account import AccountModel
 from app.schemas.transaction_schema import (
+    LoyaltyBonusResponse,
     TransferRollbackResponse,
     TransferSuccessResponse,
 )
@@ -232,171 +236,233 @@ class TransactionService:
         destination_account_number: str,
         amount: Decimal,
         simulate_bonus_error: bool = False,
-    ):
+    ) -> LoyaltyBonusResponse:
         """
-        Transfer funds between accounts with a loyalty bonus.
-        Demonstrates SQL SAVEPOINT for partial rollback.
+        Transfer funds with loyalty bonus using SAVEPOINTs.
+        Follows the pattern:
 
-        **How Savepoints Work:**
-        - A SAVEPOINT marks a point within a transaction.
-        - If an error occurs after a savepoint, ROLLBACK TO SAVEPOINT
-          reverts only that portion of work, leaving earlier changes intact.
-        - The outer transaction can continue or commit.
+          1. OUTER: async with session.begin()     → BEGIN / COMMIT
+          2. CORE:  raw SQL UPDATE accounts         → critical transfer
+          3. INNER: async with session.begin_nested() → SAVEPOINT
+          4. ERROR: except DBAPIError               → ROLLBACK TO SAVEPOINT
+          5. FALLBACK: raw SQL INSERT inside outer  → log failure
+          6. EXIT: outer block commits transfer
 
-        **Flow with savepoints:**
-        1. Start transaction (implicit with async session)
-        2. Lock both accounts
-        3. Debit source, credit destination → SAVEPOINT 'transfer_complete'
-        4. Calculate and apply loyalty bonus → SAVEPOINT 'bonus_applied'
-        5. If bonus fails and simulate_bonus_error=True:
-           - ROLLBACK TO SAVEPOINT 'bonus_applied' (undo bonus only)
-           - Transfer remains intact, commit it
-        6. If all succeeds: COMMIT everything
-
-        This shows that savepoints allow partial rollback while
-        keeping the main transaction intact.
+        When `simulate_bonus_error=True` the savepoint raises a real
+        DBAPIError (division by zero), which rolls back only the bonus,
+        leaving the core transfer intact.
         """
-        # Validate account difference
         if source_account_number == destination_account_number:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Source and destination accounts must be different",
             )
 
-        # Step 1: Lock accounts in order to prevent deadlocks
-        source, destination = await TransactionService._lock_accounts_in_order(
-            session, source_account_number, destination_account_number
-        )
-        
-        source_balance_before = source.balance
-        destination_balance_before = destination.balance
-
-        # Step 2: Validate sufficient balance
-        if source_balance_before < amount:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"Insufficient balance. "
-                    f"Available: {source_balance_before}, Required: {amount}"
-                ),
-            )
-
         try:
-            # Step 3: Perform core transfer (debit and credit)
-            source.balance -= amount
-            source.version += 1
-            session.add(source)
+            # === 1. OUTER BOUNDARY: BEGIN (auto COMMIT on exit) ===
+            async with session.begin():
+                # --- Validate & lock accounts ---
+                src_row = await session.execute(
+                    text(
+                        "SELECT balance, is_active FROM accounts "
+                        "WHERE account_number = :acc FOR UPDATE"
+                    ),
+                    {"acc": source_account_number},
+                )
+                src_data = src_row.one_or_none()
+                if not src_data:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Source account '{source_account_number}' not found",
+                    )
+                if not src_data.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Source account '{source_account_number}' is inactive",
+                    )
 
-            destination.balance += amount
-            destination.version += 1
-            session.add(destination)
+                dst_row = await session.execute(
+                    text(
+                        "SELECT balance, is_active FROM accounts "
+                        "WHERE account_number = :acc FOR UPDATE"
+                    ),
+                    {"acc": destination_account_number},
+                )
+                dst_data = dst_row.one_or_none()
+                if not dst_data:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Destination account '{destination_account_number}' not found",
+                    )
+                if not dst_data.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Destination account '{destination_account_number}' is inactive",
+                    )
 
-            # Flush the core transfer to database
-            await session.flush()
+                source_balance_before = Decimal(str(src_data.balance))
+                destination_balance_before = Decimal(str(dst_data.balance))
 
-            # CREATE SAVEPOINT 'transfer_complete'
-            # This marks the point after successful debit and credit
-            await session.execute("SAVEPOINT transfer_complete")
+                if source_balance_before < amount:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"Insufficient balance. "
+                            f"Available: {source_balance_before}, Required: {amount}"
+                        ),
+                    )
 
-            try:
-                # Step 4: Apply loyalty bonus (5% of transferred amount to destination)
-                bonus_amount = (amount * Decimal("0.05")).quantize(Decimal("0.01"))
-                
-                if bonus_amount > 0:
-                    # Simulate a bonus calculation error if requested
-                    if simulate_bonus_error:
-                        await session.flush()
-                        raise Exception(
-                            "Bonus calculation service unavailable: "
-                            "simulated error in loyalty system"
+                # === CRITICAL: Move the money (raw SQL) ===
+                await session.execute(
+                    text(
+                        "UPDATE accounts SET balance = balance - :amt, "
+                        "version = version + 1 WHERE account_number = :acc"
+                    ),
+                    {"amt": amount, "acc": source_account_number},
+                )
+                await session.execute(
+                    text(
+                        "UPDATE accounts SET balance = balance + :amt, "
+                        "version = version + 1 WHERE account_number = :acc"
+                    ),
+                    {"amt": amount, "acc": destination_account_number},
+                )
+
+                bonus_applied = False
+                bonus_amt = Decimal("0.00")
+
+                # === 2. SAVEPOINT for non-critical loyalty bonus ===
+                try:
+                    async with session.begin_nested():
+                        # --- BEGIN SAVEPOINT (auto) ---
+
+                        if simulate_bonus_error:
+                            # Cause a real DBAPIError (division by zero)
+                            await session.execute(text("SELECT 1/0"))
+
+                        bonus_amt = (amount * Decimal("0.05")).quantize(Decimal("0.01"))
+                        if bonus_amt > 0:
+                            await session.execute(
+                                text(
+                                    "UPDATE accounts SET balance = balance + :bonus, "
+                                    "version = version + 1 WHERE account_number = :acc"
+                                ),
+                                {
+                                    "bonus": float(bonus_amt),
+                                    "acc": destination_account_number,
+                                },
+                            )
+
+                        # Log bonus in transactions table
+                        await session.execute(
+                            text(
+                                """
+                                INSERT INTO transactions
+                                    (id, source_account, destination_account,
+                                     amount, payment_type, status, created_at)
+                                VALUES
+                                    (:id, :src, :dst, :amt, :type, :status, NOW())
+                                """
+                            ),
+                            {
+                                "id": uuid4(),
+                                "src": source_account_number,
+                                "dst": destination_account_number,
+                                "amt": int(bonus_amt),
+                                "type": "loyalty_bonus",
+                                "status": "completed",
+                            },
                         )
 
-                    destination.balance += bonus_amount
-                    destination.version += 1
-                    session.add(destination)
+                        bonus_applied = True
+                        # --- RELEASE SAVEPOINT on success (auto) ---
 
-                # Flush bonus to database
-                await session.flush()
+                except DBAPIError:
+                    # --- ROLLBACK TO SAVEPOINT (auto by begin_nested()) ---
+                    # Main transaction is STILL ACTIVE.
+                    # Fallback: log the failure.
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO transactions
+                                (id, source_account, destination_account,
+                                 amount, payment_type, status, created_at)
+                            VALUES
+                                (:id, :src, :dst, 0, :type, :status, NOW())
+                            """
+                        ),
+                        {
+                            "id": uuid4(),
+                            "src": source_account_number,
+                            "dst": destination_account_number,
+                            "type": "bonus_fallback",
+                            "status": "completed",
+                        },
+                    )
 
-                # CREATE SAVEPOINT 'bonus_applied'
-                # This marks the point after bonus was applied
-                await session.execute("SAVEPOINT bonus_applied")
+            # === 3. COMMIT (auto on exit from session.begin()) ===
 
-                # COMMIT the entire transaction (transfer + bonus)
-                await session.commit()
+            # Re-query final balances (in a new implicit transaction)
+            final_rows = await session.execute(
+                text(
+                    """
+                    SELECT
+                        (SELECT balance FROM accounts
+                         WHERE account_number = :src) AS src_bal,
+                        (SELECT balance FROM accounts
+                         WHERE account_number = :dst) AS dst_bal
+                    """
+                ),
+                {"src": source_account_number, "dst": destination_account_number},
+            )
+            final = final_rows.one()
+            source_balance_after = Decimal(str(final.src_bal))
+            destination_balance_after = Decimal(str(final.dst_bal))
 
-                # Refresh to get final state
-                await session.refresh(source)
-                await session.refresh(destination)
+            status_str = "completed" if bonus_applied else "bonus_rolled_back"
+            message_str = (
+                f"Successfully transferred {amount} from "
+                f"'{source_account_number}' to '{destination_account_number}'"
+                + (
+                    f" and applied {bonus_amt} loyalty bonus."
+                    if bonus_applied
+                    else (
+                        f". Bonus of {bonus_amt} failed and was rolled back "
+                        f"via savepoint. Transfer preserved."
+                    )
+                )
+            )
+            savepoint_demo_str = (
+                (
+                    "No savepoint rollback occurred. Both transfer and bonus "
+                    "were committed successfully."
+                )
+                if bonus_applied
+                else (
+                    "ROLLBACK TO SAVEPOINT executed after DBAPIError. "
+                    "Bonus undone, core transfer preserved via fallback."
+                )
+            )
 
-                return {
-                    "status": "completed",
-                    "message": (
-                        f"Successfully transferred {amount} from "
-                        f"'{source_account_number}' to '{destination_account_number}' "
-                        f"and applied {bonus_amount} loyalty bonus."
-                    ),
-                    "source_account_number": source_account_number,
-                    "destination_account_number": destination_account_number,
-                    "amount": amount,
-                    "source_balance_before": source_balance_before,
-                    "source_balance_after": source.balance,
-                    "destination_balance_before": destination_balance_before,
-                    "destination_balance_after": destination.balance,
-                    "loyalty_bonus_applied": True,
-                    "bonus_amount": bonus_amount,
-                    "savepoint_demo": (
-                        "No savepoint rollback occurred. "
-                        "Both transfer and loyalty bonus were committed successfully. "
-                        "Savepoints 'transfer_complete' and 'bonus_applied' reached."
-                    ),
-                }
+            return LoyaltyBonusResponse(
+                status=status_str,
+                message=message_str,
+                source_account_number=source_account_number,
+                destination_account_number=destination_account_number,
+                amount=amount,
+                source_balance_before=source_balance_before,
+                source_balance_after=source_balance_after,
+                destination_balance_before=destination_balance_before,
+                destination_balance_after=destination_balance_after,
+                loyalty_bonus_applied=bonus_applied,
+                bonus_amount=bonus_amt,
+                savepoint_demo=savepoint_demo_str,
+            )
 
-            except Exception as bonus_error:
-                # ROLLBACK TO SAVEPOINT 'transfer_complete'
-                # This reverts the bonus but KEEPS the transfer
-                await session.execute("ROLLBACK TO SAVEPOINT transfer_complete")
-
-                # Commit the transaction with only the transfer (bonus rolled back)
-                await session.commit()
-
-                # Refresh to get final state
-                await session.refresh(source)
-                await session.refresh(destination)
-
-                # Query for bonus that was applied
-                bonus_amount_failed = (amount * Decimal("0.05")).quantize(Decimal("0.01"))
-
-                return {
-                    "status": "bonus_rolled_back",
-                    "message": (
-                        f"Transfer succeeded, but loyalty bonus failed. "
-                        f"Rolled back to SAVEPOINT 'transfer_complete'. "
-                        f"Transfer of {amount} is intact. "
-                        f"Error: {str(bonus_error)}"
-                    ),
-                    "source_account_number": source_account_number,
-                    "destination_account_number": destination_account_number,
-                    "amount": amount,
-                    "source_balance_before": source_balance_before,
-                    "source_balance_after": source.balance,
-                    "destination_balance_before": destination_balance_before,
-                    "destination_balance_after": destination.balance,
-                    "loyalty_bonus_applied": False,
-                    "bonus_amount": Decimal("0.00"),
-                    "savepoint_demo": (
-                        f"ROLLBACK TO SAVEPOINT 'transfer_complete' was executed. "
-                        f"Bonus of {bonus_amount_failed} was undone, but the transfer "
-                        f"of {amount} was preserved and committed. "
-                        f"This demonstrates partial rollback using savepoints!"
-                    ),
-                }
-
-        except Exception as error:
-            # Rollback entire transaction if something goes wrong before savepoint
-            await session.rollback()
-            
+        except HTTPException:
+            raise
+        except Exception:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Transfer with loyalty failed: {str(error)}",
+                detail="Transaction completely aborted due to unexpected error.",
             )
