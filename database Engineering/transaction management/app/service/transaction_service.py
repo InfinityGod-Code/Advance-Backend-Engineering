@@ -220,3 +220,183 @@ class TransactionService:
                     and destination_after.balance == destination_balance_before
                 ),
             )
+
+    # ------------------------------------------------------------------
+    # Transfer with Loyalty Bonus — demonstrates savepoints
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def transfer_with_loyalty_bonus(
+        session: AsyncSession,
+        source_account_number: str,
+        destination_account_number: str,
+        amount: Decimal,
+        simulate_bonus_error: bool = False,
+    ):
+        """
+        Transfer funds between accounts with a loyalty bonus.
+        Demonstrates SQL SAVEPOINT for partial rollback.
+
+        **How Savepoints Work:**
+        - A SAVEPOINT marks a point within a transaction.
+        - If an error occurs after a savepoint, ROLLBACK TO SAVEPOINT
+          reverts only that portion of work, leaving earlier changes intact.
+        - The outer transaction can continue or commit.
+
+        **Flow with savepoints:**
+        1. Start transaction (implicit with async session)
+        2. Lock both accounts
+        3. Debit source, credit destination → SAVEPOINT 'transfer_complete'
+        4. Calculate and apply loyalty bonus → SAVEPOINT 'bonus_applied'
+        5. If bonus fails and simulate_bonus_error=True:
+           - ROLLBACK TO SAVEPOINT 'bonus_applied' (undo bonus only)
+           - Transfer remains intact, commit it
+        6. If all succeeds: COMMIT everything
+
+        This shows that savepoints allow partial rollback while
+        keeping the main transaction intact.
+        """
+        # Validate account difference
+        if source_account_number == destination_account_number:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Source and destination accounts must be different",
+            )
+
+        # Step 1: Lock accounts in order to prevent deadlocks
+        source, destination = await TransactionService._lock_accounts_in_order(
+            session, source_account_number, destination_account_number
+        )
+        
+        source_balance_before = source.balance
+        destination_balance_before = destination.balance
+
+        # Step 2: Validate sufficient balance
+        if source_balance_before < amount:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Insufficient balance. "
+                    f"Available: {source_balance_before}, Required: {amount}"
+                ),
+            )
+
+        try:
+            # Step 3: Perform core transfer (debit and credit)
+            source.balance -= amount
+            source.version += 1
+            session.add(source)
+
+            destination.balance += amount
+            destination.version += 1
+            session.add(destination)
+
+            # Flush the core transfer to database
+            await session.flush()
+
+            # CREATE SAVEPOINT 'transfer_complete'
+            # This marks the point after successful debit and credit
+            await session.execute("SAVEPOINT transfer_complete")
+
+            try:
+                # Step 4: Apply loyalty bonus (5% of transferred amount to destination)
+                bonus_amount = (amount * Decimal("0.05")).quantize(Decimal("0.01"))
+                
+                if bonus_amount > 0:
+                    # Simulate a bonus calculation error if requested
+                    if simulate_bonus_error:
+                        await session.flush()
+                        raise Exception(
+                            "Bonus calculation service unavailable: "
+                            "simulated error in loyalty system"
+                        )
+
+                    destination.balance += bonus_amount
+                    destination.version += 1
+                    session.add(destination)
+
+                # Flush bonus to database
+                await session.flush()
+
+                # CREATE SAVEPOINT 'bonus_applied'
+                # This marks the point after bonus was applied
+                await session.execute("SAVEPOINT bonus_applied")
+
+                # COMMIT the entire transaction (transfer + bonus)
+                await session.commit()
+
+                # Refresh to get final state
+                await session.refresh(source)
+                await session.refresh(destination)
+
+                return {
+                    "status": "completed",
+                    "message": (
+                        f"Successfully transferred {amount} from "
+                        f"'{source_account_number}' to '{destination_account_number}' "
+                        f"and applied {bonus_amount} loyalty bonus."
+                    ),
+                    "source_account_number": source_account_number,
+                    "destination_account_number": destination_account_number,
+                    "amount": amount,
+                    "source_balance_before": source_balance_before,
+                    "source_balance_after": source.balance,
+                    "destination_balance_before": destination_balance_before,
+                    "destination_balance_after": destination.balance,
+                    "loyalty_bonus_applied": True,
+                    "bonus_amount": bonus_amount,
+                    "savepoint_demo": (
+                        "No savepoint rollback occurred. "
+                        "Both transfer and loyalty bonus were committed successfully. "
+                        "Savepoints 'transfer_complete' and 'bonus_applied' reached."
+                    ),
+                }
+
+            except Exception as bonus_error:
+                # ROLLBACK TO SAVEPOINT 'transfer_complete'
+                # This reverts the bonus but KEEPS the transfer
+                await session.execute("ROLLBACK TO SAVEPOINT transfer_complete")
+
+                # Commit the transaction with only the transfer (bonus rolled back)
+                await session.commit()
+
+                # Refresh to get final state
+                await session.refresh(source)
+                await session.refresh(destination)
+
+                # Query for bonus that was applied
+                bonus_amount_failed = (amount * Decimal("0.05")).quantize(Decimal("0.01"))
+
+                return {
+                    "status": "bonus_rolled_back",
+                    "message": (
+                        f"Transfer succeeded, but loyalty bonus failed. "
+                        f"Rolled back to SAVEPOINT 'transfer_complete'. "
+                        f"Transfer of {amount} is intact. "
+                        f"Error: {str(bonus_error)}"
+                    ),
+                    "source_account_number": source_account_number,
+                    "destination_account_number": destination_account_number,
+                    "amount": amount,
+                    "source_balance_before": source_balance_before,
+                    "source_balance_after": source.balance,
+                    "destination_balance_before": destination_balance_before,
+                    "destination_balance_after": destination.balance,
+                    "loyalty_bonus_applied": False,
+                    "bonus_amount": Decimal("0.00"),
+                    "savepoint_demo": (
+                        f"ROLLBACK TO SAVEPOINT 'transfer_complete' was executed. "
+                        f"Bonus of {bonus_amount_failed} was undone, but the transfer "
+                        f"of {amount} was preserved and committed. "
+                        f"This demonstrates partial rollback using savepoints!"
+                    ),
+                }
+
+        except Exception as error:
+            # Rollback entire transaction if something goes wrong before savepoint
+            await session.rollback()
+            
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Transfer with loyalty failed: {str(error)}",
+            )

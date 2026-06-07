@@ -116,3 +116,56 @@ class TransferRollbackResponse(BaseModel):
             "was preserved by the rollback"
         ),
     )
+
+
+class LoyaltyBonusResponse(BaseModel):
+    """Response model for transfer with loyalty bonus using savepoints."""
+
+    status: str = Field(
+        ...,
+        description='Status of the operation: "completed", "bonus_rolled_back", or "fully_rolled_back"',
+    )
+    message: str = Field(
+        ...,
+        description="Human-readable explanation of what happened",
+    )
+    source_account_number: str = Field(
+        ...,
+        description="Account number that was debited",
+    )
+    destination_account_number: str = Field(
+        ...,
+        description="Account number that was credited",
+    )
+    amount: Decimal = Field(
+        ...,
+        description="Amount transferred",
+    )
+    source_balance_before: Decimal = Field(
+        ...,
+        description="Source balance at the start",
+    )
+    source_balance_after: Decimal = Field(
+        ...,
+        description="Source balance after operation",
+    )
+    destination_balance_before: Decimal = Field(
+        ...,
+        description="Destination balance at the start",
+    )
+    destination_balance_after: Decimal = Field(
+        ...,
+        description="Destination balance after operation",
+    )
+    loyalty_bonus_applied: bool = Field(
+        ...,
+        description="Whether the loyalty bonus was successfully applied",
+    )
+    bonus_amount: Decimal = Field(
+        ...,
+        description="Amount of bonus added (if applicable)",
+    )
+    savepoint_demo: str = Field(
+        ...,
+        description="Explanation of which savepoint rollback occurred (if any)",
+    )
