@@ -4,16 +4,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
 from app.models.m_account import AccountModel
-from app.models.m_transactions import TransactionModel
-from app.schemas.transaction_schema import TransferResponse, TransferRollbackResponse
+from app.schemas.transaction_schema import (
+    TransferRollbackResponse,
+    TransferSuccessResponse,
+)
+
+
+class SimulatedDatabaseError(Exception):
+    """
+    Custom exception used to simulate a real database or server failure.
+    Raised mid-transfer when `simulate_error=True` to demonstrate that
+    rollback in the `except` block undoes partial changes and preserves
+    atomicity.
+    """
+
+    def __init__(self, message: str = "Simulated database connection lost"):
+        self.message = message
+        super().__init__(self.message)
 
 
 class TransactionService:
     """
-    Service layer for transfer operations.
-    Demonstrates ACID atomicity via commit and rollback scenarios.
-    Uses `select_for_update` (pessimistic locking) to ensure Isolation
-    even during concurrent transfers.
+    Service layer for transfers.
+    Uses `select_for_update()` (pessimistic locking) for Isolation,
+    and locks accounts in a consistent order to prevent deadlocks.
     """
 
     # ------------------------------------------------------------------
@@ -22,13 +36,10 @@ class TransactionService:
 
     @staticmethod
     async def _get_account_locked(
-        session: AsyncSession, account_number: str
+        session: AsyncSession,
+        account_number: str,
     ) -> AccountModel:
-        """
-        Fetch an account by number with a row-level lock (FOR UPDATE).
-        This prevents concurrent transactions from modifying the same row
-        until our transaction completes (commit or rollback).
-        """
+        """Fetch an account by number with a row-level lock (FOR UPDATE)."""
         statement = (
             select(AccountModel)
             .where(AccountModel.account_number == account_number)
@@ -54,12 +65,7 @@ class TransactionService:
         source_number: str,
         destination_number: str,
     ) -> tuple[AccountModel, AccountModel]:
-        """
-        Lock both accounts in a **consistent order** (by account number)
-        to prevent deadlocks when multiple transfers run concurrently.
-        Returns (source_account, destination_account).
-        """
-        # Always lock the lexicographically smaller account number first
+        """Lock accounts in lexicographic order to prevent deadlocks."""
         if source_number < destination_number:
             first = await TransactionService._get_account_locked(session, source_number)
             second = await TransactionService._get_account_locked(
@@ -83,8 +89,20 @@ class TransactionService:
                 else (first, second)
             )
 
+    @staticmethod
+    async def _query_account(
+        session: AsyncSession,
+        account_number: str,
+    ) -> AccountModel:
+        """Simple non-locking account lookup by number."""
+        statement = select(AccountModel).where(
+            AccountModel.account_number == account_number
+        )
+        result = await session.execute(statement)
+        return result.scalar_one()
+
     # ------------------------------------------------------------------
-    # 1.  COMMIT — Full atomic transfer with no rollback
+    # Single transfer method — try/except with rollback
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -93,16 +111,24 @@ class TransactionService:
         source_account_number: str,
         destination_account_number: str,
         amount: Decimal,
-    ) -> TransferResponse:
+        simulate_error: bool = True,
+    ) -> TransferRollbackResponse | TransferSuccessResponse:
         """
-        Perform an atomic transfer inside a single database transaction.
-        Either ALL steps succeed (COMMIT) or NONE are persisted.
-        Steps:
-          1. Lock both accounts (pessimistic isolation).
-          2. Validate source has sufficient balance.
-          3. Debit source, credit destination.
-          4. Persist a TransactionModel record.
-          5. COMMIT — all changes become durable.
+        Transfer funds between two accounts.
+
+        **When `simulate_error=True` (default):**
+          1. Lock both accounts and capture initial balances.
+          2. Debit the source.
+          3. Raise `SimulatedDatabaseError` (simulating a server crash).
+          4. **Except block** catches the error and calls `session.rollback()`.
+          5. Re-query accounts — balances are unchanged.
+          6. Return `TransferRollbackResponse` proving atomicity.
+
+        **When `simulate_error=False`:**
+          1. Lock both accounts and validate balance.
+          2. Debit source, credit destination.
+          3. `session.commit()` — all changes durable.
+          4. Return `TransferSuccessResponse` with updated balances.
         """
         if source_account_number == destination_account_number:
             raise HTTPException(
@@ -113,180 +139,84 @@ class TransactionService:
         source, destination = await TransactionService._lock_accounts_in_order(
             session, source_account_number, destination_account_number
         )
+        source_balance_before = source.balance
+        destination_balance_before = destination.balance
 
-        # Validate balance
-        if source.balance < amount:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Insufficient balance in source account "
-                f"'{source_account_number}'. "
-                f"Available: {source.balance}, Required: {amount}",
-            )
-
-        # Apply the transfer
-        source.balance -= amount
-        destination.balance += amount
-        source.version += 1
-        destination.version += 1
-
-        # Create a transaction record
-        txn_record = TransactionModel(
-            source_account=source_account_number,
-            destination_account=destination_account_number,
-            amount=int(amount),  # stored as integer (cents / smallest unit)
-            payment_type="transfer",
-            status="completed",
-        )
-        session.add(source)
-        session.add(destination)
-        session.add(txn_record)
-
-        # Commit everything atomically — if this fails, ALL changes roll back
-        await session.commit()
-
-        # Refresh to get the latest DB-generated values
-        await session.refresh(source)
-        await session.refresh(destination)
-
-        return TransferResponse(
-            status="completed",
-            message=f"Successfully transferred {amount} from "
-            f"{source_account_number} to {destination_account_number}.",
-            transaction_id=txn_record.id,
-            source_new_balance=source.balance,
-            destination_new_balance=destination.balance,
-        )
-
-    # ------------------------------------------------------------------
-    # 2.  ROLLBACK — Demonstrates atomicity by interrupting the transfer
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    async def transfer_with_rollback(
-        session: AsyncSession,
-        source_account_number: str,
-        destination_account_number: str,
-        amount: Decimal,
-        simulate_failure: bool = True,
-    ) -> TransferResponse | TransferRollbackResponse:
-        """
-        Transfer endpoint with a toggleable failure simulation.
-
-        When `simulate_failure=True` (default):
-          Debit source → simulate system failure → ROLLBACK.
-          Proves atomicity: balances are unchanged.
-
-        When `simulate_failure=False`:
-          Debit source → credit destination → COMMIT.
-          Acts as a normal atomic transfer.
-
-        Both paths share the same validation and initial debit,
-        making the atomicity comparison immediately clear.
-        """
-        if source_account_number == destination_account_number:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Source and destination accounts must be different",
-            )
-
-        # 1. Capture initial balances for the rollback comparison
-        source_orig = await TransactionService._get_account_locked(
-            session, source_account_number
-        )
-        dest_orig = await TransactionService._get_account_locked(
-            session, destination_account_number
-        )
-        source_balance_before = source_orig.balance
-        destination_balance_before = dest_orig.balance
-
-        # Validate balance
         if source_balance_before < amount:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Insufficient balance in source account "
-                f"'{source_account_number}'. "
-                f"Available: {source_balance_before}, Required: {amount}",
+                detail=(
+                    f"Insufficient balance. "
+                    f"Available: {source_balance_before}, Required: {amount}"
+                ),
             )
 
-        # 2. Lock accounts in consistent order and debit the source
-        source, destination = await TransactionService._lock_accounts_in_order(
-            session, source_account_number, destination_account_number
-        )
-
+        # Debit the source
         source.balance -= amount
         source.version += 1
         session.add(source)
 
-        # 3. Branch on simulate_failure
-        if simulate_failure:
-            # --- ROLLBACK PATH: simulate failure before crediting destination ---
+        try:
+            if simulate_error:
+                await session.flush()
+                raise SimulatedDatabaseError(
+                    "Simulated database connection lost: "
+                    "server crashed after debiting source, "
+                    "before crediting destination."
+                )
 
-            txn_record = TransactionModel(
-                source_account=source_account_number,
-                destination_account=destination_account_number,
-                amount=int(amount),
-                payment_type="transfer",
-                status="failed",
-            )
-            session.add(txn_record)
-
-            await session.flush()  # Push changes so the DB sees them
-
-            # Simulated failure
-            await session.rollback()
-
-            # Re-query accounts to confirm they are back to original balances
-            source_after_stmt = select(AccountModel).where(
-                AccountModel.account_number == source_account_number
-            )
-            dest_after_stmt = select(AccountModel).where(
-                AccountModel.account_number == destination_account_number
-            )
-            source_after = (await session.execute(source_after_stmt)).scalar_one()
-            dest_after = (await session.execute(dest_after_stmt)).scalar_one()
-
-            return TransferRollbackResponse(
-                status="rolled_back",
-                message=(
-                    "Simulated system failure: transaction interrupted after debiting "
-                    "source but before crediting destination.  "
-                    "Rollback ensured no partial changes were persisted."
-                ),
-                source_balance_before=source_balance_before,
-                destination_balance_before=destination_balance_before,
-                source_balance_after=source_after.balance,
-                destination_balance_after=dest_after.balance,
-                atomicity_proven=(
-                    source_after.balance == source_balance_before
-                    and dest_after.balance == destination_balance_before
-                ),
-            )
-        else:
-            # --- COMMIT PATH: complete the transfer successfully ---
-
+            # --- Success path: credit destination and commit ---
             destination.balance += amount
             destination.version += 1
-
-            txn_record = TransactionModel(
-                source_account=source_account_number,
-                destination_account=destination_account_number,
-                amount=int(amount),
-                payment_type="transfer",
-                status="completed",
-            )
-            session.add(source)
             session.add(destination)
-            session.add(txn_record)
 
             await session.commit()
             await session.refresh(source)
             await session.refresh(destination)
 
-            return TransferResponse(
+            return TransferSuccessResponse(
                 status="completed",
-                message=f"Successfully transferred {amount} from "
-                f"{source_account_number} to {destination_account_number}.",
-                transaction_id=txn_record.id,
+                message=(
+                    f"Successfully transferred {amount} from "
+                    f"'{source_account_number}' to "
+                    f"'{destination_account_number}'."
+                ),
+                source_account_number=source_account_number,
+                destination_account_number=destination_account_number,
+                amount=amount,
                 source_new_balance=source.balance,
                 destination_new_balance=destination.balance,
+            )
+
+        except SimulatedDatabaseError as error:
+            # ROLLBACK — undoes the partial debit, preserving atomicity
+            await session.rollback()
+
+            # Re-query to confirm both accounts are unchanged
+            source_after = await TransactionService._query_account(
+                session, source_account_number
+            )
+            destination_after = await TransactionService._query_account(
+                session, destination_account_number
+            )
+
+            return TransferRollbackResponse(
+                status="atomicity_preserved",
+                message=(
+                    f"ATOMICITY PRESERVED: {error.message} "
+                    f"The `except` block called ROLLBACK, undoing the "
+                    f"partial debit — both accounts returned to their "
+                    f"original balances. Atomicity was maintained."
+                ),
+                source_account_number=source_account_number,
+                destination_account_number=destination_account_number,
+                amount=amount,
+                source_balance_before=source_balance_before,
+                source_balance_after=source_after.balance,
+                destination_balance_before=destination_balance_before,
+                destination_balance_after=destination_after.balance,
+                atomicity_proven=(
+                    source_after.balance == source_balance_before
+                    and destination_after.balance == destination_balance_before
+                ),
             )

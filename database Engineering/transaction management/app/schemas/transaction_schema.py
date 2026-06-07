@@ -1,6 +1,4 @@
 from decimal import Decimal
-from uuid import UUID
-from datetime import datetime
 from pydantic import BaseModel, Field
 
 
@@ -29,53 +27,92 @@ class TransferRequest(BaseModel):
     )
 
 
-class TransferResponse(BaseModel):
+class TransferSuccessResponse(BaseModel):
     """
-    Schema returned for a successful atomic transfer.
-    Shows the updated balances of both accounts.
+    Returned when `simulate_error=false`.
+    The full transfer (debit + credit) succeeds and is COMMITted.
     """
 
-    status: str = Field(..., description="Transaction status (completed)")
-    message: str = Field(..., description="Human-readable result message")
-    transaction_id: UUID = Field(
-        ..., description="Unique ID of the persisted transaction record"
+    status: str = Field(
+        ...,
+        description='Set to "completed" to indicate a successful transfer',
+    )
+    message: str = Field(
+        ...,
+        description="Human-readable success message",
+    )
+    source_account_number: str = Field(
+        ...,
+        description="Account number that was debited",
+    )
+    destination_account_number: str = Field(
+        ...,
+        description="Account number that was credited",
+    )
+    amount: Decimal = Field(
+        ...,
+        description="Amount that was transferred",
     )
     source_new_balance: Decimal = Field(
-        ..., description="Source account balance after the transfer"
+        ...,
+        description="Source account balance after the transfer",
     )
     destination_new_balance: Decimal = Field(
-        ..., description="Destination account balance after the transfer"
+        ...,
+        description="Destination account balance after the transfer",
     )
-
-    class Config:
-        from_attributes = True
 
 
 class TransferRollbackResponse(BaseModel):
     """
-    Schema returned for the rollback demonstration endpoint.
-    Proves atomicity by showing balances remain unchanged after a
-    deliberately interrupted transfer.
+    Returned when `simulate_error=true`.
+    A SimulatedDatabaseError was raised mid-transfer, caught, and
+    ROLLBACK was called — the database returned to its original state,
+    proving ACID atomicity is preserved.
     """
 
-    status: str = Field(..., description="Transaction status (rolled_back)")
+    status: str = Field(
+        ...,
+        description=(
+            'Set to "atomicity_preserved" to indicate that atomicity was maintained'
+        ),
+    )
     message: str = Field(
-        ..., description="Explanatory message about the atomicity demonstration"
+        ...,
+        description="Human-readable explanation of the rollback demonstration",
+    )
+    source_account_number: str = Field(
+        ...,
+        description="Account number that was debited (then undone)",
+    )
+    destination_account_number: str = Field(
+        ...,
+        description="Account number that would have been credited",
+    )
+    amount: Decimal = Field(
+        ...,
+        description="Amount that was debited then rolled back",
     )
     source_balance_before: Decimal = Field(
-        ..., description="Source account balance before the attempted transfer"
-    )
-    destination_balance_before: Decimal = Field(
-        ..., description="Destination account balance before the attempted transfer"
+        ...,
+        description="Source balance at the start (before debit)",
     )
     source_balance_after: Decimal = Field(
-        ..., description="Source account balance after rollback (should equal 'before')"
+        ...,
+        description="Source balance after ROLLBACK (should equal 'before')",
+    )
+    destination_balance_before: Decimal = Field(
+        ...,
+        description="Destination balance at the start",
     )
     destination_balance_after: Decimal = Field(
         ...,
-        description="Destination account balance after rollback (should equal 'before')",
+        description="Destination balance after ROLLBACK (should equal 'before')",
     )
     atomicity_proven: bool = Field(
         ...,
-        description="True if source and destination balances are unchanged, proving atomicity",
+        description=(
+            "True when both balances are unchanged, confirming atomicity "
+            "was preserved by the rollback"
+        ),
     )

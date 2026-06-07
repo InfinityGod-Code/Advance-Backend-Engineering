@@ -5,119 +5,79 @@ from fastapi import APIRouter, HTTPException, Query, status
 from app.dependancies.dependancy import sessionDB
 from app.schemas.transaction_schema import (
     TransferRequest,
-    TransferResponse,
     TransferRollbackResponse,
+    TransferSuccessResponse,
 )
-from app.service.transaction_service import TransactionService
+from app.service.transaction_service import (
+    SimulatedDatabaseError,
+    TransactionService,
+)
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
 
 @router.post(
     "/transfer",
-    response_model=TransferResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Atomic fund transfer (COMMIT)",
+    response_model=Union[TransferRollbackResponse, TransferSuccessResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Transfer funds with toggleable error simulation",
     description=(
-        "Performs a complete atomic transfer from one account to another. "
-        "Both accounts are locked with SELECT FOR UPDATE (pessimistic isolation) "
-        "to prevent race conditions.  All changes — debit, credit, and the "
-        "transaction record — are COMMITted together atomically.  If any step "
-        "fails, everything is rolled back."
+        "Transfers funds between two accounts.  Accepts a `simulate_error` "
+        "query parameter to demonstrate ACID atomicity.\n\n"
+        "**`simulate_error=true` (default):**\n"
+        "Debits the source, then raises a `SimulatedDatabaseError` "
+        "(mimicking a server crash) before crediting the destination.  "
+        "The `except` block calls **ROLLBACK**, undoing the partial "
+        "debit — atomicity is preserved.\n\n"
+        "**`simulate_error=false`:**\n"
+        "Completes the full transfer (debit + credit) and COMMITs.  "
+        "Normal successful path."
     ),
 )
-async def transfer_funds(
+async def transfer(
     transfer_data: TransferRequest,
     session: sessionDB,
-) -> TransferResponse:
+    simulate_error: bool = Query(
+        True,
+        description=(
+            "If `true`, raise a SimulatedDatabaseError mid-transfer; "
+            "the except block calls ROLLBACK to demonstrate atomicity.  "
+            "If `false`, complete the transfer normally (COMMIT)."
+        ),
+    ),
+) -> Union[TransferRollbackResponse, TransferSuccessResponse]:
     """
-    Execute an atomic transfer from **source_account** to **destination_account**.
+    Transfer funds between two accounts.
 
     - **source_account_number**: Account to debit
     - **destination_account_number**: Account to credit
-    - **amount**: Amount to transfer (> 0)
+    - **amount**: Amount to transfer
+    - **simulate_error** (query param, default `true`):
+        - `true`  → raise SimulatedDatabaseError, caught → ROLLBACK
+        - `false` → debit → credit → COMMIT
 
-    Returns the updated balances for both accounts along with a transaction ID.
-    If the source has insufficient funds or either account is inactive, a
-    400/404 error is raised **before** any changes are made.
+    When `simulate_error=true`, the response proves atomicity: balances
+    **before** and **after** are identical.
     """
     try:
-        result = await TransactionService.transfer(
+        return await TransactionService.transfer(
             session=session,
             source_account_number=transfer_data.source_account_number,
             destination_account_number=transfer_data.destination_account_number,
             amount=transfer_data.amount,
+            simulate_error=simulate_error,
         )
-        return result
-
     except HTTPException:
         raise
+    except SimulatedDatabaseError:
+        # This branch should never be reached since the service catches it
+        # internally, but kept as a safety net for unexpected edge cases.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unexpected database error during transfer",
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Transfer failed unexpectedly: {exc}",
-        )
-
-
-@router.post(
-    "/transfer-rollback",
-    response_model=Union[TransferRollbackResponse, TransferResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Atomic transfer demonstration with ROLLBACK",
-    description=(
-        "Demonstrates the Atomicity property of database transactions.  "
-        "Accepts a `simulate_failure` query parameter that controls whether "
-        "a mid-transfer failure is triggered.\n\n"
-        "**`simulate_failure=true` (default):**\n"
-        "Debits the source account, then **deliberately simulates "
-        "a system failure** before crediting the destination.  The transaction "
-        "is ROLLED BACK, proving that partial changes are never persisted — "
-        "the database returns to its original consistent state.\n\n"
-        "**`simulate_failure=false`:**\n"
-        "Completes the full transfer (debit + credit) and COMMITs.  "
-        "Use this to verify that the exact same code path produces a "
-        "successful transfer when the failure flag is off."
-    ),
-)
-async def transfer_with_rollback(
-    transfer_data: TransferRequest,
-    session: sessionDB,
-    simulate_failure: bool = Query(
-        True,
-        description=(
-            "If `true`, simulate a system failure mid-transfer and ROLLBACK "
-            "to demonstrate atomicity.  If `false`, complete the transfer "
-            "normally (COMMIT)."
-        ),
-    ),
-) -> Union[TransferRollbackResponse, TransferResponse]:
-    """
-    Demonstrate ACID atomicity with a toggleable failure simulation.
-
-    - **source_account_number**: Account that would be debited
-    - **destination_account_number**: Account that would be credited
-    - **amount**: Amount that would be transferred
-    - **simulate_failure** (query param, default `true`):
-        - `true`  → debit source, simulate failure, ROLLBACK
-        - `false` → debit source, credit destination, COMMIT
-
-    When `simulate_failure=true`, the response proves atomicity by showing
-    that balances **before** and **after** are identical.
-    """
-    try:
-        result = await TransactionService.transfer_with_rollback(
-            session=session,
-            source_account_number=transfer_data.source_account_number,
-            destination_account_number=transfer_data.destination_account_number,
-            amount=transfer_data.amount,
-            simulate_failure=simulate_failure,
-        )
-        return result
-
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Rollback demonstration failed unexpectedly: {exc}",
         )
