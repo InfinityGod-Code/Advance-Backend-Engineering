@@ -3,6 +3,12 @@
   <img src="assets/advance_backend_engineering_banner.svg" alt="AI Engineering from Scratch — reference manual banner" width="100%">
 </p>
 Advanced Backend Engineering: Production-grade backend systems, distributed architecture, scalability, reliability, cloud-native development, observability, security, and enterprise software engineering.
+Welcome to this course where you need everything to master the advance backend engineering.
+Each Module have different phase as mentioned and each phase has its own materials. for example :
+- working prpject with code and docker containerized.
+- notes : Genralley will have proper hand-crafted notes for each concepts covered with proper diagrams and code snippets if required.
+- resources : may contains links to external youtuve videos or MD files 
+- diagrams : contains all the diagrams for the concepts or architecture.
 
 # 🗄️ Database Engineering - Phase1
 
