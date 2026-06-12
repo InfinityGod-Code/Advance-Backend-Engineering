@@ -6,6 +6,7 @@ from app.database import init_db
 from app.routes.accounts import router as accounts_router
 from app.routes.transactions import router as transactions_router
 from app.routes.withdrawals import router as withdrawals_router
+from app.routes.debit_cards import router as debit_cards_router
 
 app_description = """
 We are focusing these topics in the project : 
@@ -39,6 +40,7 @@ app = FastAPI(description=app_description, lifespan=lifespan)
 app.include_router(accounts_router, prefix="/api/v1")
 app.include_router(transactions_router, prefix="/api/v1")
 app.include_router(withdrawals_router, prefix="/api/v1")
+app.include_router(debit_cards_router, prefix="/api/v1")
 
 
 @app.get("/")

@@ -1,8 +1,11 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel, EmailStr
+
+from app.models.account import AccountStatus, DebitHolderType
 
 
 class AccountCreate(BaseModel):
@@ -33,10 +36,40 @@ class TransferRequest(BaseModel):
     amount: Decimal
 
 
+class DebitCardCreate(BaseModel):
+    account_id: int
+    type: DebitHolderType = DebitHolderType.default
+
+
+class DebitCardUpdate(BaseModel):
+    type: Optional[DebitHolderType] = None
+
+
+class DebitCardResponse(BaseModel):
+    id: UUID
+    account_id: int
+    type: DebitHolderType
+    card_number: str
+
+    model_config = {"from_attributes": True}
+
+
+class DebitSwipeRequest(BaseModel):
+    card_number: str
+    amount: Decimal
+    merchant: str
+
+
+class DebitCardTransferRequest(BaseModel):
+    from_card_id: UUID
+    to_card_id: UUID
+    amount: Decimal
+
+
 class WithdrawalCreate(BaseModel):
     account_id: int
     amount: Decimal
-    name : str
+    name: str
     reference: Optional[str] = None
 
 

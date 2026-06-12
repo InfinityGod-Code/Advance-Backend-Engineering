@@ -6,7 +6,7 @@ async def make_withdrawal(request_name: str):
     async with httpx.AsyncClient() as client:
         print(f"🚀 Firing first request {request_name}...")
         response = await client.post(
-            "http://127.0.0.1:8000/api/v1/withdrawals/demo-concurrency",
+            "http://127.0.0.1:8000/api/v1/withdrawals/withdraw-mvcc",
             json={"account_id": 1, "amount": 1.00, "name": "ATM Withdrawal"},
         )
         print(
@@ -18,7 +18,7 @@ async def make_withdrawal2(request_name: str):
     async with httpx.AsyncClient() as client:
         print(f"🚀 Firing first request {request_name}...")
         response = await client.post(
-            "http://127.0.0.1:8000/api/v1/withdrawals/demo-concurrency",
+            "http://127.0.0.1:8000/api/v1/withdrawals/withdraw-mvcc",
             json={
                 "account_id": 1,
                 "amount": 1.00,

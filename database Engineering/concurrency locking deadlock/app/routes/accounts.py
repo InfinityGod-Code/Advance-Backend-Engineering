@@ -2,12 +2,20 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
-
+from sqlalchemy.orm import selectinload
 from app.database import get_session
 from app.models.account import Account
 from app.schemas import AccountCreate, AccountResponse, AccountUpdate
 
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
+
+
+@router.get("/get-all-debit-cards")
+async def get_all_debit_cards(account_id : int,session : AsyncSession = Depends(get_session)) :
+    statement = select(Account).where(Account.id == account_id).options(selectinload(Account.debit_cards))
+    result = await session.execute(statement)
+    account = result.scalars().first()
+    return account.debit_cards
 
 
 @router.post("/", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
@@ -74,3 +82,4 @@ async def delete_account(account_id: int, session: AsyncSession = Depends(get_se
 
     await session.delete(account)
     await session.commit()
+
