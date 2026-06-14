@@ -41,9 +41,6 @@ app = FastAPI(
 )
 
 
-# ==========================================
-# 🔐 STEP 1: AUTHENTICATION LAYER (JWT CLAIMS)
-# ==========================================
 class UserClaims(BaseModel):
     """Represents the decoded data extracted from a valid JWT."""
     user_id: str
@@ -69,9 +66,6 @@ def get_current_user(request: Request) -> UserClaims:
     return UserClaims(user_id=user_id, tenant_id=tenant_id)
 
 
-# ==========================================
-# 🛡️ STEP 2: AUTHORIZATION LAYER (CASBIN GUARD)
-# ==========================================
 class CasbinGuard:
     """A reusable FastAPI dependency that checks access rights dynamically."""
     def __init__(self, action: str):
@@ -99,32 +93,28 @@ class CasbinGuard:
         return current_user
 
 
-# ==========================================
-# 📋 STEP 3: ENDPOINTS FOR MATRIX VALIDATION
-# ==========================================
-
-# 🔹 1. BASE EMPLOYEE LEVEL
+# 1. BASE EMPLOYEE LEVEL
 @app.get("/api/v1/my-wallet", dependencies=[Depends(CasbinGuard(action="read"))])
 async def view_wallet():
     """Accessible by: employee, manager, regional_manager, tenant_admin"""
     return {"status": "success", "balance": "$1,250.00", "currency": "USD"}
 
 
-# 🔹 2. OPERATIONS BRANCH (LOCAL MANAGER AND ABOVE)
+# 2. OPERATIONS BRANCH (LOCAL MANAGER AND ABOVE)
 @app.post("/api/v1/ops/department/expenses/42/approve", dependencies=[Depends(CasbinGuard(action="write"))])
 async def approve_expense():
     """Accessible by: manager, regional_manager, tenant_admin (Blocked for: employee, accountant)"""
     return {"status": "success", "message": "Expense #42 approved for payment."}
 
 
-# 🔹 3. FINANCE BRANCH (ACCOUNTANT AND OWNER)
+# 3. FINANCE BRANCH (ACCOUNTANT AND OWNER)
 @app.get("/api/v1/finance/ledger-entries", dependencies=[Depends(CasbinGuard(action="read"))])
 async def view_ledger():
     """Accessible by: accountant, tenant_admin (Blocked for: manager, employee)"""
     return {"status": "success", "records": "Corporate Ledger Entries Matrix Root"}
 
 
-# 🔹 4. GLOBAL PLATFORM SPHERE (SAAS SUPPORT & SUPERADMIN ONLY)
+# 4. GLOBAL PLATFORM SPHERE (SAAS SUPPORT & SUPERADMIN ONLY)
 @app.get("/api/v1/tenants/company_abc/debug-logs", dependencies=[Depends(CasbinGuard(action="read"))])
 async def read_tenant_logs():
     """Accessible by: platform_superadmin, customer_support_tier2 (Blocked for ALL tenant users!)"""
