@@ -76,3 +76,4 @@ Casbin never hits the database during an evaluation request.Here is the exact me
 3. How Changes Are Synced Natively,If you grant an employee a new role via your administration control dashboard:You execute *enforcer.add_grouping_policy("david", "manager", "company_abc")*.The Casbin adapter generates and fires a fast, targeted INSERT INTO casbin_rule ... query directly to PostgreSQL so the rule is saved safely to disk.Simultaneously, Casbin updates its local internal RAM memory matrix to include the new graph connection.This ensures that subsequent API authorization checks evaluate the updated rule structure instantly, bypassing the need to reboot your application or query PostgreSQL again.
 
 #### Upcoming Paths 
+- We will try to make complete project with UI with Flutter web or Vue.js
