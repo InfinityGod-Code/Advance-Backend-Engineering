@@ -77,3 +77,5 @@ Casbin never hits the database during an evaluation request.Here is the exact me
 
 #### Upcoming Paths 
 - We will try to make complete project with UI with Flutter web or Vue.js
+- Code will have user to register with specific role and then trying to access different material 
+  with proper checks that authorize the resources.
