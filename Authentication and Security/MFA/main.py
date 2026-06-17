@@ -124,8 +124,3 @@ def login_with_mfa(request: LoginRequest):
     # C. Login successful (Generate JWT, set session, etc.)
     return {"message": "Login successful!", "mfa_authenticated": True if user_data.mfa_secret else False}
 
-@app.get("/")
-def test() :
-    return {
-        "content" : "Hello World"
-    }
