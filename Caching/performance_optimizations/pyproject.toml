@@ -7,9 +7,13 @@ requires-python = ">=3.14"
 dependencies = [
     "alembic>=1.18.4",
     "asyncpg>=0.31.0",
+    "psycopg2-binary>=2.9.0",
     "fastapi[standard]>=0.137.1",
     "greenlet>=3.5.1",
+    "pydantic-settings>=2.7.0",
     "redis>=8.0.0",
     "sqlalchemy>=2.0.51",
     "sqlmodel>=0.0.38",
+    "locust>=2.44.3",
+    "debugpy>=1.8.21",
 ]

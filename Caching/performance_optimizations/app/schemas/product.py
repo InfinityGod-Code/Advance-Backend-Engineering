@@ -1,9 +1,9 @@
-from pydantic import BaseModel
-from typing import Optional
 from uuid import UUID
+from typing import Optional
+from sqlmodel import SQLModel, Field
 
 
-class ProductCreate(BaseModel):
+class ProductCreate(SQLModel):
     name: str
     description: str
     price: float
@@ -13,7 +13,7 @@ class ProductCreate(BaseModel):
     genre: str = "Action-Adventure"
     age_rating: str = "M (Mature 17+)"
     edition: str = "Standard"
-    features: list[str] = []
+    features: list[str] = Field(default=[])
     currency: str = "USD"
     sale_status: str = "coming_soon"
     max_per_user: int = 2
@@ -25,7 +25,7 @@ class ProductCreate(BaseModel):
     is_active: bool = True
 
 
-class ProductUpdate(BaseModel):
+class ProductUpdate(SQLModel):
     name: Optional[str] = None
     description: Optional[str] = None
     price: Optional[float] = None
@@ -47,7 +47,7 @@ class ProductUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
-class ProductResponse(BaseModel):
+class ProductPublic(SQLModel):
     id: UUID
     name: str
     description: str

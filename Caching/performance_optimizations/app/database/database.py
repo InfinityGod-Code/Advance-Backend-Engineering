@@ -1,13 +1,13 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
-from app.config import database_settings
 from typing import AsyncGenerator
+from app.database.config import database_settings
 
 
 # 1. Create the engine (Manages the pool)
 engine = create_async_engine(
-    url=database_settings.POSTGRES_URL,
+    url=database_settings.settings.database_url,
     echo=True,  # Set to False in production!
     pool_size=10,          # Best practice optimization
     max_overflow=20,       # Best practice optimization
