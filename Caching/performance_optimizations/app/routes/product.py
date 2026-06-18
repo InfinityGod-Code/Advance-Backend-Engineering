@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from app.database.cruds import get_optimized_product
@@ -31,8 +31,9 @@ async def get(
     product_id: UUID,
     db: AsyncSession = Depends(get_db),
     redis=Depends(get_redis_client),
+    use_cache: bool = Query(default=True, alias="cache"),
 ):
-    product = await get_optimized_product(product_id, db, redis)
+    product = await get_optimized_product(product_id, db, redis, use_cache)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     return product

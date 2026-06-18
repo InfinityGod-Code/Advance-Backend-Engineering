@@ -12,10 +12,20 @@ async def get_product_catalog(
     db,
     redis,
     execute_heavy_db_query: callable,
+    use_cache: bool = True,
     use_lock: bool = False,
 ):
-    cache_key = f"cache:product:{product_id}" 
+    cache_key = f"cache:product:{product_id}"
     lock_key = f"lock:product:{product_id}"
+
+    if not use_cache:
+        logger.warning(
+            f"🚫 Cache disabled. Reading directly from Postgres for key: {cache_key}"
+        )
+        db_data = await execute_heavy_db_query(db, product_id)
+        if not db_data:
+            raise HTTPException(status_code=404, detail="Product not found")
+        return ProductPublic(**db_data.model_dump(mode="json"))
 
     # 1. Look up data inside cache layer
     cached_data = await redis.get(cache_key)
@@ -35,7 +45,7 @@ async def get_product_catalog(
 
         db_data_dict = db_data.model_dump(mode="json")
         # Write back to cache with 60s TTL
-        await redis.setex(cache_key, 60, json.dumps(db_data_dict))
+        await redis.setex(cache_key, 3600, json.dumps(db_data_dict))
         return ProductPublic(**db_data_dict)
 
     # SCENARIO B: Thundering Herd Mitigation via Distributed Mutex Guard
@@ -46,7 +56,7 @@ async def get_product_catalog(
             cached_data = await redis.get(cache_key)
             if cached_data:
                 logger.info("🛡️ Mutex Safeguard: Cache Hit verified on inner check.")
-                return ProductCreate(**json.loads(cached_data))
+                return ProductPublic(**json.loads(cached_data))
 
             logger.warning(
                 f"🔑 Mutex Acquired. Exactly ONE worker querying Postgres for: {cache_key}"
@@ -58,6 +68,6 @@ async def get_product_catalog(
             db_data_dict = db_data.model_dump(mode="json")
             # Apply a 60 second base TTL with a 1-5 second randomized jitter
             # to prevent all keys from structurally expiring at the same time.
-            ttl_jitter = 60 + random.randint(1, 5)
+            ttl_jitter = 3600 + random.randint(1, 5)
             await redis.setex(cache_key, ttl_jitter, json.dumps(db_data_dict))
             return ProductPublic(**db_data_dict)

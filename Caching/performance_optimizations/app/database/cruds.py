@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.product import get_product_catalog
 from app.database.models import Product, ProductCreate, ProductUpdate
+from app.schemas.product import ProductPublic
 
 
 async def create_product(db: AsyncSession, data: ProductCreate) -> Product:
@@ -28,12 +29,14 @@ async def get_optimized_product(
     product_id: UUID,
     db: AsyncSession,
     redis,
-) -> Product | None:
+    use_cache: bool = True,
+) -> ProductPublic | None:
     return await get_product_catalog(
         product_id=product_id,
         db=db,
         redis=redis,
         execute_heavy_db_query=get_product,
+        use_cache=use_cache,
     )
 
 
