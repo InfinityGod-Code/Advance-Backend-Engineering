@@ -56,7 +56,7 @@ async def get_product_catalog(
             cached_data = await redis.get(cache_key)
             if cached_data:
                 logger.info("🛡️ Mutex Safeguard: Cache Hit verified on inner check.")
-                return ProductPublic(**json.loads(cached_data))
+                return ProductCreate(**json.loads(cached_data))
 
             logger.warning(
                 f"🔑 Mutex Acquired. Exactly ONE worker querying Postgres for: {cache_key}"

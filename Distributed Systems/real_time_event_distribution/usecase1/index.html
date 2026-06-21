@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lead Engineer Real-Time Distribution Panel</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1a1a1a; color: #eaeaea; margin: 20px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card { background: #2a2a2a; padding: 20px; border-radius: 8px; border: 1px solid #333; }
+        .status { font-weight: bold; padding: 5px 10px; border-radius: 4px; display: inline-block; }
+        .connected { background: #1b4d3e; color: #2ecc71; }
+        .disconnected { background: #4d1b1b; color: #e74c3c; }
+        input, select, button { width: 100%; padding: 10px; margin: 8px 0; border-radius: 4px; border: 1px solid #444; background: #333; color: #fff; box-sizing: border-box; }
+        button { background: #3498db; cursor: pointer; border: none; font-weight: bold; }
+        button:hover { background: #2980b9; }
+        #log-stream { background: #000; font-family: monospace; height: 300px; overflow-y: scroll; padding: 10px; border-radius: 4px; border: 1px solid #444; color: #00ff00; }
+        .log-entry { margin-bottom: 8px; border-bottom: 1px solid #222; padding-bottom: 4px; }
+        .timestamp { color: #888; }
+    </style>
+</head>
+<body>
+
+    <h2>⚡ Cluster Event Distribution Monitor</h2>
+    <div style="margin-bottom: 15px;">
+        Server Status: <span id="connection-status" class="status disconnected">Disconnected</span>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h3>1. Edge Connection Config</h3>
+            <label>Set Local Client Tracking ID (e.g., user_123, user_456):</label>
+            <input type="text" id="client-id" value="user_123">
+            <button onclick="connectWebSocket()">Connect / Switch Client Socket</button>
+            
+            <hr style="border-color: #333; margin: 20px 0;">
+            
+            <h3>2. Event Ingress Trigger (Simulate Webhook)</h3>
+            <p style="font-size: 0.85em; color: #aaa;">This issues an HTTP POST to `/publish` simulating an external service firing into the cluster.</p>
+            <label>Target Client ID (Who should get this?):</label>
+            <input type="text" id="target-id" value="user_123">
+            <label>Payload Data (JSON):</label>
+            <input type="text" id="payload-data" value='{"alert": "System update scheduled", "severity": "critical"}'>
+            <button onclick="triggerPublishEvent()" style="background: #2ecc71;">Publish Event to Cluster</button>
+        </div>
+
+        <div class="card">
+            <h3>3. Live Inbound Packet Stream</h3>
+            <div id="log-stream"></div>
+            <button onclick="document.getElementById('log-stream').innerHTML = ''" style="background: #555; margin-top: 10px;">Clear Console</button>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+
+        function connectWebSocket() {
+            const clientId = document.getElementById('client-id').value.trim();
+            if (!clientId) return alert("Please enter a Client ID");
+
+            if (ws) {
+                logConsole(`System: Explicitly closing active socket connection...`);
+                ws.close();
+            }
+
+            // Points to our FastAPI WebSocket Endpoint
+            const wsUri = `ws://${window.location.host === '127.0.0.1:8000' || window.location.host === 'localhost:8000' ? window.location.host : 'localhost:8000'}/ws/${clientId}`;
+            logConsole(`System: Connecting to ${wsUri}`);
+            
+            ws = new WebSocket(wsUri);
+
+            ws.onopen = () => {
+                const badge = document.getElementById('connection-status');
+                badge.innerText = `Connected as [${clientId}]`;
+                badge.className = "status connected";
+                logConsole(`System: TCP Handshake complete. Listening on cluster plane.`);
+            };
+
+            ws.onmessage = (event) => {
+                logConsole(`INBOUND FRAME: ${event.data}`);
+            };
+
+            ws.onclose = () => {
+                const badge = document.getElementById('connection-status');
+                badge.innerText = "Disconnected";
+                badge.className = "status disconnected";
+                logConsole(`System: Socket connection disconnected.`);
+            };
+
+            ws.onerror = (error) => {
+                logConsole(`ERROR: WebSocket Exception observed.`);
+            };
+        }
+
+        async function triggerPublishEvent() {
+            const target = document.getElementById('target-id').value.trim();
+            const rawData = document.getElementById('payload-data').value;
+            
+            let parsedData;
+            try {
+                parsedData = JSON.parse(rawData);
+            } catch(e) {
+                return alert("Invalid JSON format in payload data field.");
+            }
+
+            const bodyPayload = {
+                target_client: target,
+                event: "ui_demo_trigger",
+                data: parsedData
+            };
+
+            logConsole(`Ingress: Triggering REST HTTP POST to /publish...`);
+
+            try {
+                const response = await fetch('/publish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bodyPayload)
+                });
+                const resData = await response.json();
+                logConsole(`Ingress Response: ${JSON.stringify(resData)}`);
+            } catch (err) {
+                logConsole(`Ingress Error: Failed to hit stateless publish route.`);
+            }
+        }
+
+        function logConsole(msg) {
+            const stream = document.getElementById('log-stream');
+            const time = new Date().toLocaleTimeString();
+            stream.innerHTML += `<div class="log-entry"><span class="timestamp">[${time}]</span> ${msg}</div>`;
+            stream.scrollTop = stream.scrollHeight;
+        }
+
+        // Auto-connect on startup for ease of use
+        window.onload = connectWebSocket;
+    </script>
+</body>
+</html>
