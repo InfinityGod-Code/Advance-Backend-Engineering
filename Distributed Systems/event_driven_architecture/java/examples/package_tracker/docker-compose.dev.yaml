@@ -1,0 +1,49 @@
+services:
+  app:
+    build:
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/event-driven-architecture-java
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: app
+    # Mount source so changes reflect inside the container
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    # 🚀 Docker Compose Watch — auto rebuild/restart on file changes
+    develop:
+      watch:
+        # Rebuild entire image when build config changes
+        - action: rebuild
+          path: ./build.gradle
+        # Sync changed source files + restart container (fast, no image rebuild)
+        - action: sync+restart
+          path: ./src
+          target: /app/src
+          ignore:
+            - "**/*.class"
+
+  db:
+    image: postgres:16
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: event-driven-architecture-java
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:

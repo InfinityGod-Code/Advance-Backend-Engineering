@@ -1,0 +1,10 @@
+FROM eclipse-temurin:22-jdk
+WORKDIR /app
+
+COPY gradlew settings.gradle build.gradle ./
+COPY gradle ./gradle
+RUN ./gradlew dependencies --no-daemon
+
+COPY src ./src
+
+ENTRYPOINT ["./gradlew", "bootRun", "--no-daemon"]
