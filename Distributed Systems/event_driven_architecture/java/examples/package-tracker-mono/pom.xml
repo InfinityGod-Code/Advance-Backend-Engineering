@@ -1,0 +1,12 @@
+<groupId>com.tracker</groupId>
+<artifactId>package-tracker-parent</artifactId>
+<version>1.0.0</version>
+<packaging>pom</packaging>
+
+<modules>
+    <module>common-events</module>
+    <module>shipment-service</module>
+    <module>notification-service</module>
+    <module>delivery-service</module>
+    <module>customer-service</module>
+</modules>
