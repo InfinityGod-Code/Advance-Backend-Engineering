@@ -27,6 +27,7 @@
         <module>delivery-service</module>
         <module>notification-service</module>
         <module>shipment-service</module>
+        <module>gateway-service</module>
     </modules>
 
     <dependencyManagement>

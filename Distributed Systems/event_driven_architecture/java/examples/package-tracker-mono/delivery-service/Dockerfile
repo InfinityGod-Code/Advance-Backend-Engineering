@@ -1,8 +1,9 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /app
 COPY pom.xml .
+COPY common-events common-events/
 COPY delivery-service delivery-service/
-RUN mvn -f delivery-service/pom.xml clean package -DskipTests
+RUN mvn -N install -DskipTests && mvn -f common-events/pom.xml install -DskipTests && mvn -f delivery-service/pom.xml clean package -DskipTests
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app

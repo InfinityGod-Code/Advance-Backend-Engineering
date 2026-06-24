@@ -30,10 +30,11 @@ public class ShipmentService {
         this.kafkaTemplate = kafkaTemplate;
     }
 
-    public Shipment createShipment(OrderCreatedEvent event) {
+    public void createShipment(OrderCreatedEvent event) {
         if (shipmentRepository.existsByOrderId(event.getOrderId())) {
             log.warn("Shipment already exists for orderId={}, skipping", event.getOrderId());
-            return shipmentRepository.findByOrderId(event.getOrderId()).orElseThrow();
+            shipmentRepository.findByOrderId(event.getOrderId()).orElseThrow();
+            return;
         }
 
         Shipment shipment = Shipment.builder()
@@ -56,6 +57,5 @@ public class ShipmentService {
         kafkaTemplate.send(shipmentEventsTopic, shipmentEvent.getShipmentId(), shipmentEvent);
         log.info("ShipmentStartedEvent published: shipmentId={}, topic={}", shipmentEvent.getShipmentId(), shipmentEventsTopic);
 
-        return saved;
     }
 }

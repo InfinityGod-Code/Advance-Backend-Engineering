@@ -14,6 +14,11 @@ import org.springframework.stereotype.Component;
 public class ShipmentEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(ShipmentEventListener.class);
+    private final SseEmitterService sseEmitterService;
+
+    public ShipmentEventListener(SseEmitterService sseEmitterService) {
+        this.sseEmitterService = sseEmitterService;
+    }
 
     @KafkaListener(
             topics = "${app.kafka.topics.shipment-events:shipment-events}",
@@ -33,6 +38,7 @@ public class ShipmentEventListener {
         try {
             sendShipmentNotification(event);
             ack.acknowledge();
+            sseEmitterService.broadcast("ShipmentStarted", event);
             log.debug("Shipment notification acknowledged for shipmentId={}", event.getShipmentId());
         } catch (Exception e) {
             log.error("Failed to process shipment notification for shipmentId={}: {}",

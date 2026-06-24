@@ -1,0 +1,17 @@
+server:
+  port: 8080
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.http.server.reactive: DEBUG
+    org.springframework.web.reactive: DEBUG
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: events-stream
+          uri: http://notification-service:8080
+          predicates:
+            - Path=/api/v1/events/stream,/api/v1/events/stream/**

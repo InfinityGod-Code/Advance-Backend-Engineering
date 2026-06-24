@@ -16,6 +16,29 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
 
+  akhq:
+    image: tchiotludo/akhq:0.26.0
+    ports:
+      - "8085:8080"
+    environment:
+      AKHQ_CONFIGURATION: |
+        akhq:
+          connections:
+            package-tracker-kafka:
+              properties:
+                bootstrap.servers: "kafka:9092"
+    depends_on:
+      - kafka
+
+  gateway-service:
+    build:
+      context: .
+      dockerfile: gateway-service/Dockerfile
+    ports:
+      - "8086:8080"
+    depends_on:
+      - notification-service
+
   customer-service:
     build:
       context: .

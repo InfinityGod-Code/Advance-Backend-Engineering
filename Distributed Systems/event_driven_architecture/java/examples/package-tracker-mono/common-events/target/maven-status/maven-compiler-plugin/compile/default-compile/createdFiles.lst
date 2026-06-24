@@ -1,2 +1,3 @@
 com/tracker/common_events/OrderCreatedEvent.class
 com/tracker/common_events/ShipmentStartedEvent.class
+com/tracker/common_events/DeliveryStartedEvent.class

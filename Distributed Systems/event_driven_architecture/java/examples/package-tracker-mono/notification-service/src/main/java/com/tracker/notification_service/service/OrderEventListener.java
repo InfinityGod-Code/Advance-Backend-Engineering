@@ -14,6 +14,11 @@ import org.springframework.stereotype.Component;
 public class OrderEventListener {
 
     private static final Logger log = LoggerFactory.getLogger(OrderEventListener.class);
+    private final SseEmitterService sseEmitterService;
+
+    public OrderEventListener(SseEmitterService sseEmitterService) {
+        this.sseEmitterService = sseEmitterService;
+    }
 
     @KafkaListener(
             topics = "${app.kafka.topics.order-events:order-events}",
@@ -33,6 +38,7 @@ public class OrderEventListener {
         try {
             sendOrderConfirmationEmail(event);
             ack.acknowledge();
+            sseEmitterService.broadcast("OrderCreated", event);
             log.debug("Order notification acknowledged for orderId={}", event.getOrderId());
         } catch (Exception e) {
             log.error("Failed to process order notification for orderId={}: {}",

@@ -38,6 +38,14 @@ public class KafkaConsumerConfig {
     }
 
     @Bean
+    public ConsumerFactory<String, Object> deliveryStartedEventConsumerFactory() {
+        Map<String, Object> config = baseConsumerConfig();
+        config.put(JsonDeserializer.TYPE_MAPPINGS,
+                "com.tracker.common_events.DeliveryStartedEvent:com.tracker.common_events.DeliveryStartedEvent");
+        return new DefaultKafkaConsumerFactory<>(config);
+    }
+
+    @Bean
     public ConsumerFactory<String, Object> orderCreatedEventConsumerFactory() {
         Map<String, Object> config = baseConsumerConfig();
         config.put(JsonDeserializer.TYPE_MAPPINGS,
@@ -51,6 +59,21 @@ public class KafkaConsumerConfig {
         config.put(JsonDeserializer.TYPE_MAPPINGS,
                 "com.tracker.common_events.ShipmentStartedEvent:com.tracker.common_events.ShipmentStartedEvent");
         return new DefaultKafkaConsumerFactory<>(config);
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, Object> deliveryStartedEventListenerFactory() {
+        ConcurrentKafkaListenerContainerFactory<String, Object> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(deliveryStartedEventConsumerFactory());
+        factory.setConcurrency(2);
+        factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
+
+        ExponentialBackOff backOff = new ExponentialBackOff(1000L, 2.0);
+        backOff.setMaxElapsedTime(30000L);
+        factory.setCommonErrorHandler(new DefaultErrorHandler(backOff));
+
+        return factory;
     }
 
     @Bean
