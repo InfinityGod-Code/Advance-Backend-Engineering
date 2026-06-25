@@ -1,0 +1,188 @@
+services:
+  kafka:
+    image: confluentinc/cp-kafka:7.9.0
+    hostname: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://localhost:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+
+  akhq:
+    image: tchiotludo/akhq:0.26.0
+    ports:
+      - "8085:8080"
+    environment:
+      AKHQ_CONFIGURATION: |
+        akhq:
+          connections:
+            package-tracker-kafka:
+              properties:
+                bootstrap.servers: "kafka:9092"
+    depends_on:
+      - kafka
+
+  customer-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: customerdb
+      POSTGRES_USER: customer
+      POSTGRES_PASSWORD: customer
+    volumes:
+      - customer-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customer -d customerdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  shipment-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: shipmentdb
+      POSTGRES_USER: shipment
+      POSTGRES_PASSWORD: shipment
+    volumes:
+      - shipment-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shipment -d shipmentdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  delivery-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: deliverydb
+      POSTGRES_USER: delivery
+      POSTGRES_PASSWORD: delivery
+    volumes:
+      - delivery-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U delivery -d deliverydb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  notification-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: notificationdb
+      POSTGRES_USER: notification
+      POSTGRES_PASSWORD: notification
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notification -d notificationdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  gateway-service:
+    build:
+      context: .
+      dockerfile: gateway-service/Dockerfile
+    ports:
+      - "8086:8080"
+    volumes:
+      - ./gateway-service/target/:/app/target/
+    entrypoint: ["/bin/sh", "-c", "exec java -jar /app/target/*.jar || exec java -jar /app/app.jar"]
+    depends_on:
+      - customer-service
+      - shipment-service
+      - delivery-service
+      - notification-service
+
+  customer-service:
+    build:
+      context: .
+      dockerfile: customer-service/Dockerfile
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./customer-service/target/:/app/target/
+    entrypoint: ["/bin/sh", "-c", "exec java -jar /app/target/*.jar || exec java -jar /app/app.jar"]
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_DATASOURCE_URL: jdbc:postgresql://customer-db:5432/customerdb
+      SPRING_DATASOURCE_USERNAME: customer
+      SPRING_DATASOURCE_PASSWORD: customer
+    depends_on:
+      kafka:
+        condition: service_started
+      customer-db:
+        condition: service_healthy
+
+  delivery-service:
+    build:
+      context: .
+      dockerfile: delivery-service/Dockerfile
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./delivery-service/target/:/app/target/
+    entrypoint: ["/bin/sh", "-c", "exec java -jar /app/target/*.jar || exec java -jar /app/app.jar"]
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_DATASOURCE_URL: jdbc:postgresql://delivery-db:5432/deliverydb
+      SPRING_DATASOURCE_USERNAME: delivery
+      SPRING_DATASOURCE_PASSWORD: delivery
+    depends_on:
+      kafka:
+        condition: service_started
+      delivery-db:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    ports:
+      - "8083:8080"
+    volumes:
+      - ./notification-service/target/:/app/target/
+    entrypoint: ["/bin/sh", "-c", "exec java -jar /app/target/*.jar || exec java -jar /app/app.jar"]
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notificationdb
+      SPRING_DATASOURCE_USERNAME: notification
+      SPRING_DATASOURCE_PASSWORD: notification
+    depends_on:
+      kafka:
+        condition: service_started
+      notification-db:
+        condition: service_healthy
+
+  shipment-service:
+    build:
+      context: .
+      dockerfile: shipment-service/Dockerfile
+    ports:
+      - "8084:8080"
+    volumes:
+      - ./shipment-service/target/:/app/target/
+    entrypoint: ["/bin/sh", "-c", "exec java -jar /app/target/*.jar || exec java -jar /app/app.jar"]
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_DATASOURCE_URL: jdbc:postgresql://shipment-db:5432/shipmentdb
+      SPRING_DATASOURCE_USERNAME: shipment
+      SPRING_DATASOURCE_PASSWORD: shipment
+    depends_on:
+      kafka:
+        condition: service_started
+      shipment-db:
+        condition: service_healthy
+
+volumes:
+  customer-db-data:
+  shipment-db-data:
+  delivery-db-data:
+  notification-db-data:
