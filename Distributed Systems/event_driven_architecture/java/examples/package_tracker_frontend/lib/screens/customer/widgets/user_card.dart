@@ -1,111 +1,95 @@
 import 'package:flutter/material.dart';
 import '../../../models/user.dart';
-import '../../../data/mock_data.dart';
+import '../../../widgets/app_card.dart';
 
 class UserCard extends StatelessWidget {
   final User user;
   final VoidCallback onTap;
+  final int orderCount;
+  final int activeCount;
 
-  const UserCard({super.key, required this.user, required this.onTap});
+  const UserCard({
+    super.key,
+    required this.user,
+    required this.onTap,
+    this.orderCount = 0,
+    this.activeCount = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final orderCount = MockDataStore().getOrderCount(user.id);
-    final activeCount = MockDataStore().getActiveOrderCount(user.id);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-      child: Material(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        elevation: 1,
-        shadowColor: user.avatarColor.withValues(alpha: 0.2),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+    return AppCard(
+      onTap: onTap,
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 28,
+            backgroundColor: theme.colorScheme.primary,
+            child: Text(
+              user.initials,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
               ),
             ),
-            child: Row(
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: user.avatarColor,
-                  child: Text(
-                    user.initials,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                Text(
+                  user.name,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  user.email,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    _Chip(
+                      icon: Icons.shopping_bag_outlined,
+                      label: '$orderCount orders',
+                      color: theme.colorScheme.primary,
                     ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        user.name,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                    const SizedBox(width: 8),
+                    if (activeCount > 0)
+                      _Chip(
+                        icon: Icons.circle,
+                        label: '$activeCount active',
+                        color: Colors.green,
+                        iconSize: 8,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        user.email,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          _StatChip(
-                            icon: Icons.shopping_bag_outlined,
-                            label: '$orderCount orders',
-                            color: theme.colorScheme.primary,
-                          ),
-                          const SizedBox(width: 8),
-                          if (activeCount > 0)
-                            _StatChip(
-                              icon: Icons.circle,
-                              label: '$activeCount active',
-                              color: Colors.green,
-                              iconSize: 8,
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.chevron_right,
-                  color: theme.colorScheme.onSurfaceVariant,
+                  ],
                 ),
               ],
             ),
           ),
-        ),
+          Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant),
+        ],
       ),
     );
   }
 }
 
-class _StatChip extends StatelessWidget {
+class _Chip extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
   final double iconSize;
 
-  const _StatChip({
+  const _Chip({
     required this.icon,
     required this.label,
     required this.color,
@@ -115,7 +99,7 @@ class _StatChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),

@@ -1,96 +1,59 @@
-import 'package:flutter/material.dart';
 import 'address.dart';
-
-enum OrderStatus {
-  created,
-  placed,
-  confirmed,
-  shipped,
-  inTransit,
-  outForDelivery,
-  delivered,
-  cancelled;
-
-  String get label {
-    switch (this) {
-      case OrderStatus.created:
-        return 'Created';
-      case OrderStatus.placed:
-        return 'Placed';
-      case OrderStatus.confirmed:
-        return 'Confirmed';
-      case OrderStatus.shipped:
-        return 'Shipped';
-      case OrderStatus.inTransit:
-        return 'In Transit';
-      case OrderStatus.outForDelivery:
-        return 'Out for Delivery';
-      case OrderStatus.delivered:
-        return 'Delivered';
-      case OrderStatus.cancelled:
-        return 'Cancelled';
-    }
-  }
-
-  Color get color {
-    switch (this) {
-      case OrderStatus.created:
-        return Colors.blueGrey;
-      case OrderStatus.placed:
-        return Colors.blue;
-      case OrderStatus.confirmed:
-        return Colors.indigo;
-      case OrderStatus.shipped:
-        return Colors.amber.shade700;
-      case OrderStatus.inTransit:
-        return Colors.orange;
-      case OrderStatus.outForDelivery:
-        return Colors.deepOrange;
-      case OrderStatus.delivered:
-        return Colors.green;
-      case OrderStatus.cancelled:
-        return Colors.red;
-    }
-  }
-
-  IconData get icon {
-    switch (this) {
-      case OrderStatus.created:
-        return Icons.add_circle_outline;
-      case OrderStatus.placed:
-        return Icons.receipt_long;
-      case OrderStatus.confirmed:
-        return Icons.check_circle_outline;
-      case OrderStatus.shipped:
-        return Icons.local_shipping;
-      case OrderStatus.inTransit:
-        return Icons.flight;
-      case OrderStatus.outForDelivery:
-        return Icons.delivery_dining;
-      case OrderStatus.delivered:
-        return Icons.check_circle;
-      case OrderStatus.cancelled:
-        return Icons.cancel;
-    }
-  }
-}
+import 'order_status.dart';
+export 'order_status.dart';
 
 class Order {
-  final String id;
-  final String userId;
+  final int id;
+  final String orderId;
+  final int userId;
   final List<String> items;
   final double totalAmount;
   final Address shippingAddress;
   OrderStatus status;
   final DateTime createdAt;
+  final DateTime updatedAt;
 
   Order({
     required this.id,
+    required this.orderId,
     required this.userId,
     required this.items,
     required this.totalAmount,
     required this.shippingAddress,
     required this.status,
     required this.createdAt,
-  });
+    DateTime? updatedAt,
+  }) : updatedAt = updatedAt ?? createdAt;
+
+  factory Order.fromJson(Map<String, dynamic> json) => Order(
+    id: (json['id'] as num).toInt(),
+    orderId: json['orderId'] as String? ?? 'ORD-${json['id']}',
+    userId: json['userId'] ?? 0,
+    items:
+        (json['items'] as List<dynamic>?)?.map((e) => e as String).toList() ??
+        [],
+    totalAmount: (json['totalAmount'] as num).toDouble(),
+    shippingAddress: json['shippingAddress'] != null
+        ? Address.fromJson(json['shippingAddress'] as Map<String, dynamic>)
+        : Address(street: '', city: '', state: '', zip: ''),
+    status: OrderStatus.fromValue(json['status'] as String?),
+    createdAt: json['createdAt'] != null
+        ? DateTime.parse(json['createdAt'] as String)
+        : DateTime.now(),
+    updatedAt: json['updatedAt'] != null
+        ? DateTime.parse(json['updatedAt'] as String)
+        : null,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'orderId': orderId,
+    'userId': userId,
+    'items': items,
+    'totalAmount': totalAmount,
+    'shippingAddress': shippingAddress.toJson(),
+    'status': status.value,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt.toIso8601String(),
+  };
 }

@@ -94,7 +94,7 @@ services:
       - "8086:8080"
     volumes:
       - ./gateway-service/target/:/app/target/
-    entrypoint: ["/bin/sh", "-c", "exec java -jar /app/target/*.jar || exec java -jar /app/app.jar"]
+    entrypoint: ["/bin/sh", "-c", "set -- /app/target/*.jar; if [ -f \"$1\" ]; then exec java -jar \"$1\"; else exec java -jar /app/app.jar; fi"]
     depends_on:
       - customer-service
       - shipment-service
@@ -109,7 +109,7 @@ services:
       - "8081:8080"
     volumes:
       - ./customer-service/target/:/app/target/
-    entrypoint: ["/bin/sh", "-c", "exec java -jar /app/target/*.jar || exec java -jar /app/app.jar"]
+    entrypoint: ["/bin/sh", "-c", "set -- /app/target/*.jar; if [ -f \"$1\" ]; then exec java -jar \"$1\"; else exec java -jar /app/app.jar; fi"]
     environment:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SPRING_DATASOURCE_URL: jdbc:postgresql://customer-db:5432/customerdb
@@ -129,7 +129,7 @@ services:
       - "8082:8080"
     volumes:
       - ./delivery-service/target/:/app/target/
-    entrypoint: ["/bin/sh", "-c", "exec java -jar /app/target/*.jar || exec java -jar /app/app.jar"]
+    entrypoint: ["/bin/sh", "-c", "set -- /app/target/*.jar; if [ -f \"$1\" ]; then exec java -jar \"$1\"; else exec java -jar /app/app.jar; fi"]
     environment:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SPRING_DATASOURCE_URL: jdbc:postgresql://delivery-db:5432/deliverydb
@@ -149,7 +149,7 @@ services:
       - "8083:8080"
     volumes:
       - ./notification-service/target/:/app/target/
-    entrypoint: ["/bin/sh", "-c", "exec java -jar /app/target/*.jar || exec java -jar /app/app.jar"]
+    entrypoint: ["/bin/sh", "-c", "set -- /app/target/*.jar; if [ -f \"$1\" ]; then exec java -jar \"$1\"; else exec java -jar /app/app.jar; fi"]
     environment:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notificationdb
@@ -169,7 +169,7 @@ services:
       - "8084:8080"
     volumes:
       - ./shipment-service/target/:/app/target/
-    entrypoint: ["/bin/sh", "-c", "exec java -jar /app/target/*.jar || exec java -jar /app/app.jar"]
+    entrypoint: ["/bin/sh", "-c", "set -- /app/target/*.jar; if [ -f \"$1\" ]; then exec java -jar \"$1\"; else exec java -jar /app/app.jar; fi"]
     environment:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SPRING_DATASOURCE_URL: jdbc:postgresql://shipment-db:5432/shipmentdb

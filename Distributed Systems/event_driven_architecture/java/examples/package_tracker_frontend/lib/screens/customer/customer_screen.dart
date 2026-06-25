@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/user.dart';
-import '../../data/mock_data.dart';
+import '../../cubits/user_cubit.dart';
 import 'widgets/user_card.dart';
 import 'create_user_sheet.dart';
 import 'user_orders_screen.dart';
@@ -10,20 +11,40 @@ class CustomerScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: MockDataStore(),
-      builder: (context, _) {
-        final store = MockDataStore();
-        return _CustomerBody(store: store);
+    return BlocBuilder<UserCubit, UserState>(
+      builder: (context, state) {
+        if (state is UserLoading) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (state is UserError) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 8),
+                Text(state.message, textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () => context.read<UserCubit>().loadUsers(),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          );
+        }
+        if (state is UserLoaded) {
+          return _CustomerBody(users: state.users);
+        }
+        return const SizedBox.shrink();
       },
     );
   }
 }
 
 class _CustomerBody extends StatefulWidget {
-  final MockDataStore store;
-
-  const _CustomerBody({required this.store});
+  final List<User> users;
+  const _CustomerBody({required this.users});
 
   @override
   State<_CustomerBody> createState() => _CustomerBodyState();
@@ -40,10 +61,9 @@ class _CustomerBodyState extends State<_CustomerBody> {
   }
 
   List<User> get _filteredUsers {
-    final users = widget.store.users;
-    if (_searchQuery.isEmpty) return users;
+    if (_searchQuery.isEmpty) return widget.users;
     final q = _searchQuery.toLowerCase();
-    return users
+    return widget.users
         .where(
           (u) =>
               u.name.toLowerCase().contains(q) ||
@@ -99,44 +119,39 @@ class _CustomerBodyState extends State<_CustomerBody> {
                 child: SafeArea(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(24, 50, 24, 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Row(
                       children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.people_alt_outlined,
+                        const Icon(
+                          Icons.people_alt_outlined,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Customers',
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            '${widget.users.length} total',
+                            style: const TextStyle(
                               color: Colors.white,
-                              size: 28,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 13,
                             ),
-                            const SizedBox(width: 10),
-                            Text(
-                              'Customers',
-                              style: theme.textTheme.headlineSmall?.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const Spacer(),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                '${widget.store.users.length} total',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ],
                     ),

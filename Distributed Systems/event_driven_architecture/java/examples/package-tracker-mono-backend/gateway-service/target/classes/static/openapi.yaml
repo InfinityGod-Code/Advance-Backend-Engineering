@@ -1,0 +1,468 @@
+openapi: 3.0.3
+info:
+  title: Package Tracker API
+  description: |
+    Unified API Gateway for the Package Tracker system.
+    Exposes Customer, Shipment, Delivery, and Notification services through a single endpoint.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8086
+    description: Local development gateway
+
+paths:
+  /api/v1/users:
+    get:
+      tags: [Users]
+      summary: List all users
+      operationId: getAllUsers
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+    post:
+      tags: [Users]
+      summary: Create a new user
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "200":
+          description: Created user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /api/v1/users/{id}:
+    get:
+      tags: [Users]
+      summary: Get user by ID
+      operationId: getUserById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+
+  /api/v1/orders:
+    get:
+      tags: [Orders]
+      summary: List all orders
+      operationId: getAllOrders
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+          description: Filter orders by user ID
+      responses:
+        "200":
+          description: List of orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+    post:
+      tags: [Orders]
+      summary: Create a new order
+      operationId: createOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrderRequest"
+      responses:
+        "200":
+          description: Created order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
+  /api/v1/shipments:
+    get:
+      tags: [Shipments]
+      summary: List shipments
+      operationId: getAllShipments
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ShipmentStatus"
+      responses:
+        "200":
+          description: List of shipments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Shipment"
+
+  /api/v1/shipments/{shipmentId}/approve:
+    post:
+      tags: [Shipments]
+      summary: Approve a shipment
+      operationId: approveShipment
+      parameters:
+        - name: shipmentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Approved shipment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Shipment"
+        "404":
+          description: Shipment not found
+
+  /api/v1/shipments/{shipmentId}/decline:
+    post:
+      tags: [Shipments]
+      summary: Decline a shipment
+      operationId: declineShipment
+      parameters:
+        - name: shipmentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Declined shipment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Shipment"
+        "404":
+          description: Shipment not found
+
+  /api/v1/deliveries:
+    get:
+      tags: [Deliveries]
+      summary: List deliveries
+      operationId: getAllDeliveries
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/DeliveryStatus"
+      responses:
+        "200":
+          description: List of deliveries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Delivery"
+
+  /api/v1/deliveries/{deliveryId}/approve:
+    post:
+      tags: [Deliveries]
+      summary: Approve delivery (set to OUT_FOR_DELIVERY)
+      operationId: approveDelivery
+      parameters:
+        - name: deliveryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Approved delivery
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Delivery"
+        "404":
+          description: Delivery not found
+
+  /api/v1/deliveries/{deliveryId}/delivered:
+    post:
+      tags: [Deliveries]
+      summary: Mark delivery as delivered
+      operationId: markDelivered
+      parameters:
+        - name: deliveryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delivery marked as delivered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Delivery"
+        "404":
+          description: Delivery not found
+
+  /api/v1/deliveries/{deliveryId}/not-delivered:
+    post:
+      tags: [Deliveries]
+      summary: Mark delivery as not delivered
+      operationId: markNotDelivered
+      parameters:
+        - name: deliveryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delivery marked as not delivered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Delivery"
+        "404":
+          description: Delivery not found
+
+  /api/v1/events/stream:
+    get:
+      tags: [Events]
+      summary: Subscribe to real-time SSE event stream
+      operationId: streamEvents
+      description: |
+        Opens a Server-Sent Events connection that streams order, shipment,
+        and delivery events as they occur.
+      responses:
+        "200":
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+components:
+  schemas:
+    Address:
+      type: object
+      properties:
+        street:
+          type: string
+          example: "221B Baker Street"
+        city:
+          type: string
+          example: "London"
+        state:
+          type: string
+          example: "Greater London"
+        zip:
+          type: string
+          example: "NW16XE"
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          example: "Priya Sharma"
+        email:
+          type: string
+          format: email
+          example: "priya.sharma@example.com"
+        phone:
+          type: string
+          example: "+91-9123456789"
+        address:
+          $ref: "#/components/schemas/Address"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateUserRequest:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+          example: "Priya Sharma"
+        email:
+          type: string
+          format: email
+          example: "priya.sharma@example.com"
+        phone:
+          type: string
+          example: "+91-9123456789"
+        address:
+          $ref: "#/components/schemas/Address"
+
+    OrderStatus:
+      type: string
+      enum: [PENDING, CREATED, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED]
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        orderId:
+          type: string
+          example: "ORD-2026-1001"
+        user:
+          $ref: "#/components/schemas/User"
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        totalAmount:
+          type: number
+          format: double
+          example: 2499.99
+        shippingAddress:
+          $ref: "#/components/schemas/Address"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateOrderRequest:
+      type: object
+      required: [user, totalAmount]
+      properties:
+        orderId:
+          type: string
+          description: Optional custom order ID (auto-generated if omitted)
+          example: "ORD-2026-1001"
+        user:
+          type: object
+          required: [id]
+          properties:
+            id:
+              type: integer
+              format: int64
+              example: 1
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+          description: Optional status (defaults to CREATED)
+        totalAmount:
+          type: number
+          format: double
+          example: 2499.99
+        shippingAddress:
+          $ref: "#/components/schemas/Address"
+          description: Optional shipping address (falls back to user's address)
+
+    ShipmentStatus:
+      type: string
+      enum: [PENDING_APPROVAL, SHIPPED, NOT_SHIPPED]
+
+    Shipment:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        shipmentId:
+          type: string
+          example: "SHP-A1B2C3D4"
+        orderId:
+          type: string
+          example: "ORD-2026-1001"
+        customerId:
+          type: string
+          example: "1"
+        totalAmount:
+          type: number
+          format: double
+          example: 2499.99
+        shippingStreet:
+          type: string
+        shippingCity:
+          type: string
+        shippingState:
+          type: string
+        shippingZip:
+          type: string
+        status:
+          $ref: "#/components/schemas/ShipmentStatus"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DeliveryStatus:
+      type: string
+      enum: [PENDING_DELIVERY, OUT_FOR_DELIVERY, DELIVERED, NOT_DELIVERED]
+
+    Delivery:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        deliveryId:
+          type: string
+          example: "DEL-E5F6G7H8"
+        orderId:
+          type: string
+          example: "ORD-2026-1001"
+        shipmentId:
+          type: string
+          example: "SHP-A1B2C3D4"
+        customerId:
+          type: string
+          example: "1"
+        totalAmount:
+          type: number
+          format: double
+          example: 2499.99
+        shippingStreet:
+          type: string
+        shippingCity:
+          type: string
+        shippingState:
+          type: string
+        shippingZip:
+          type: string
+        status:
+          $ref: "#/components/schemas/DeliveryStatus"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time

@@ -10,6 +10,7 @@ import com.tracker.customer_service.repository.OrderRepository;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -27,6 +28,14 @@ public class OrderService {
         this.orderRepository = orderRepository;
         this.userService = userService;
         this.kafkaTemplate = kafkaTemplate;
+    }
+
+    public List<Order> getAllOrders() {
+        return orderRepository.findAll();
+    }
+
+    public List<Order> getOrdersByUserId(Long userId) {
+        return orderRepository.findByUserId(userId);
     }
 
     public Order createOrder(CreateOrderRequest request) {
