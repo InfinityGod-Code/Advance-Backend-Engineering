@@ -33,10 +33,11 @@ public class ShipmentService {
     }
 
     @Transactional
-    public Shipment createShipment(OrderCreatedEvent event) {
+    public void createShipment(OrderCreatedEvent event) {
         if (shipmentRepository.existsByOrderId(event.getOrderId())) {
             log.warn("Shipment already exists for orderId={}, skipping", event.getOrderId());
-            return shipmentRepository.findByOrderId(event.getOrderId()).orElseThrow();
+            shipmentRepository.findByOrderId(event.getOrderId()).orElseThrow();
+            return;
         }
 
         Shipment shipment = Shipment.builder()
@@ -53,7 +54,6 @@ public class ShipmentService {
 
         Shipment saved = shipmentRepository.save(shipment);
         log.info("Shipment pending approval: id={}, orderId={}", saved.getShipmentId(), saved.getOrderId());
-        return saved;
     }
 
     @Transactional
