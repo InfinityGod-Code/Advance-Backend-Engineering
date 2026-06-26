@@ -1,17 +1,35 @@
-# package_tracker
+# Package Tracker Frontend
 
-Frontend project that supports and demonstrate the visual understanding of the backend event-driven architecture.
+Flutter web app that visualizes the backend event-driven architecture for package tracking.
 
-## Getting Started
+## Run Instructions
 
-This project is a starting point for a Flutter application.
+**Prerequisites:** Flutter 3.44.0+ with Chrome browser.
 
-A few resources to get you started if this is your first Flutter project:
+```bash
+flutter pub get
+flutter run -d chrome
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+> **Important:** The backend Java service must be running on `http://localhost:8086` before launching.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Architecture
+
+- **State Management:** BLoC pattern (`flutter_bloc`)
+- **HTTP Client:** `dio` (connects to `localhost:8086`)
+- **Real-time:** SSE for live event updates
+- **Target:** Web only (Chrome)
+
+## Backend API Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/users` | Fetch users |
+| `GET /api/v1/orders?userId={id}` | Fetch orders by user |
+| `GET /api/v1/shipments` | Fetch shipments |
+| `POST /api/v1/shipments/{id}/approve` | Approve shipment |
+| `POST /api/v1/shipments/{id}/decline` | Decline shipment |
+| `GET /api/v1/deliveries` | Fetch deliveries |
+| `POST /api/v1/deliveries/{id}/approve` | Approve delivery |
+| `POST /api/v1/deliveries/{id}/delivered` | Mark delivered |
+| `POST /api/v1/deliveries/{id}/not-delivered` | Mark not delivered |
