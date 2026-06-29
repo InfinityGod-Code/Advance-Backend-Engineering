@@ -50,7 +50,6 @@ public class KafkaConsumerConfig {
         ExponentialBackOff backOff = new ExponentialBackOff(1000L, 2.0);
         backOff.setMaxElapsedTime(30000L);
         factory.setCommonErrorHandler(new DefaultErrorHandler(backOff));
-
         return factory;
     }
 }
