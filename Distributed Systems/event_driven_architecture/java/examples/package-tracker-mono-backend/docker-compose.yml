@@ -30,6 +30,19 @@ services:
     depends_on:
       - kafka
 
+  eureka-server:
+    build:
+      context: .
+      dockerfile: eureka-server/Dockerfile
+    ports:
+      - "8761:8761"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
   customer-db:
     image: postgres:16-alpine
     environment:
@@ -95,11 +108,11 @@ services:
     volumes:
       - ./gateway-service/target/:/app/target/
     entrypoint: ["/bin/sh", "-c", "set -- /app/target/*.jar; if [ -f \"$1\" ]; then exec java -jar \"$1\"; else exec java -jar /app/app.jar; fi"]
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     depends_on:
-      - customer-service
-      - shipment-service
-      - delivery-service
-      - notification-service
+      eureka-server:
+        condition: service_healthy
 
   customer-service:
     build:
@@ -115,10 +128,13 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://customer-db:5432/customerdb
       SPRING_DATASOURCE_USERNAME: customer
       SPRING_DATASOURCE_PASSWORD: customer
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     depends_on:
       kafka:
         condition: service_started
       customer-db:
+        condition: service_healthy
+      eureka-server:
         condition: service_healthy
 
   delivery-service:
@@ -135,10 +151,13 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://delivery-db:5432/deliverydb
       SPRING_DATASOURCE_USERNAME: delivery
       SPRING_DATASOURCE_PASSWORD: delivery
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     depends_on:
       kafka:
         condition: service_started
       delivery-db:
+        condition: service_healthy
+      eureka-server:
         condition: service_healthy
 
   notification-service:
@@ -155,10 +174,13 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notificationdb
       SPRING_DATASOURCE_USERNAME: notification
       SPRING_DATASOURCE_PASSWORD: notification
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     depends_on:
       kafka:
         condition: service_started
       notification-db:
+        condition: service_healthy
+      eureka-server:
         condition: service_healthy
 
   shipment-service:
@@ -175,10 +197,13 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://shipment-db:5432/shipmentdb
       SPRING_DATASOURCE_USERNAME: shipment
       SPRING_DATASOURCE_PASSWORD: shipment
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     depends_on:
       kafka:
         condition: service_started
       shipment-db:
+        condition: service_healthy
+      eureka-server:
         condition: service_healthy
 
 volumes:

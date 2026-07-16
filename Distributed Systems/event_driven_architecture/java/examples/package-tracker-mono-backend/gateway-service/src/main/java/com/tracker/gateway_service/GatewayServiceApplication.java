@@ -2,6 +2,7 @@ package com.tracker.gateway_service;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 import org.springframework.cloud.gateway.route.RouteLocator;
 import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
 import org.springframework.context.annotation.Bean;
@@ -10,6 +11,7 @@ import org.springframework.web.cors.reactive.CorsWebFilter;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 
 @SpringBootApplication
+@EnableDiscoveryClient
 public class GatewayServiceApplication {
 
     public static void main(String[] args) {
@@ -35,16 +37,16 @@ public class GatewayServiceApplication {
                 .route("events-stream-java", r -> r
                         .path("/api/v1/events/stream", "/api/v1/events/stream/**")
                         .filters(f -> f.setResponseHeader("Cache-Control", "no-cache"))
-                        .uri("http://notification-service:8080"))
+                        .uri("lb://notification-service"))
                 .route("customer-service", r -> r
                         .path("/api/v1/users/**", "/api/v1/orders/**")
-                        .uri("http://customer-service:8080"))
+                        .uri("lb://customer-service"))
                 .route("shipment-service", r -> r
                         .path("/api/v1/shipments/**")
-                        .uri("http://shipment-service:8080"))
+                        .uri("lb://shipment-service"))
                 .route("delivery-service", r -> r
                         .path("/api/v1/deliveries/**")
-                        .uri("http://delivery-service:8080"))
+                        .uri("lb://delivery-service"))
                 .build();
     }
 }

@@ -5,21 +5,35 @@ This document explains how real-time events from all microservices are streamed 
 ## Architecture
 
 ```
-Client ──→ Gateway (port 8086) ──proxy──→ notification-service (port 8080)
-                                              │
-                                              ├── Kafka: order-events
-                                              ├── Kafka: shipment-events
-                                              └── Kafka: delivery-events
-                                              └── SSE: /api/v1/events/stream
+                                  ┌─────────────────┐
+                                  │  Eureka Server   │
+                                  │  (port 8761)     │
+                                  └────────┬────────┘
+                                           │ registers
+                              ┌────────────┼──────────────────┐
+                              ▼            ▼                   ▼
+Client ──→ Gateway (port 8086) ──(lb://)──→ notification-service
+                              │            │
+                              │            ├── Kafka: order-events
+                              │            ├── Kafka: shipment-events
+                              │            └── Kafka: delivery-events
+                              │            └── SSE: /api/v1/events/stream
+                              │
+                              ├──(lb://)──→ customer-service
+                              ├──(lb://)──→ shipment-service
+                              └──(lb://)──→ delivery-service
 ```
+
+All services register with Eureka. The Gateway resolves targets via `lb://<service-id>` using Eureka + Spring Cloud LoadBalancer.
 
 ### Services involved
 
-| Service | Port | Role |
-|---------|------|------|
-| `gateway-service` | 8086 | Single entry point, proxies SSE to notification-service |
-| `notification-service` | 8083 | Kafka consumers + SSE emitter registry + broadcast |
-| `delivery-service` | 8082 | Produces `DeliveryStartedEvent` to `delivery-events` |
+| Service | Port | Registers with Eureka | Role |
+|---------|------|-----------------------|------|
+| `eureka-server` | 8761 | — (server) | Service registry & discovery |
+| `gateway-service` | 8086 | ✓ | Single entry point, resolves targets via Eureka |
+| `notification-service` | 8083 | ✓ | Kafka consumers + SSE emitter registry + broadcast |
+| `delivery-service` | 8082 | ✓ | Produces `DeliveryStartedEvent` to `delivery-events` |
 
 ## Event Topics
 

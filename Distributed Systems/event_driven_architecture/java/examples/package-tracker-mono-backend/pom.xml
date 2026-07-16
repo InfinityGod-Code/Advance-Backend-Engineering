@@ -23,6 +23,7 @@
 
     <modules>
         <module>common-events</module>
+        <module>eureka-server</module>
         <module>customer-service</module>
         <module>delivery-service</module>
         <module>notification-service</module>

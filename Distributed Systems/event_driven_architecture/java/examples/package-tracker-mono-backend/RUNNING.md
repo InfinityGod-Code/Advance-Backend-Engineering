@@ -27,6 +27,7 @@ This starts all services, databases, Kafka, and the AKHQ Kafka UI.
 
 | Service             | Internal Port | Exposed Port |
 |---------------------|---------------|--------------|
+| Eureka Server       | 8761          | 8761         |
 | Gateway             | 8080          | 8086         |
 | Customer Service    | 8080          | 8081         |
 | Delivery Service    | 8080          | 8082         |
@@ -46,6 +47,10 @@ To also remove database volumes:
 ```bash
 docker compose down -v
 ```
+
+### Eureka Dashboard
+
+Once running, access the Eureka dashboard at [http://localhost:8761](http://localhost:8761) to see all registered services.
 
 ---
 
@@ -114,13 +119,15 @@ java -jar gateway-service/target/*.jar
 
 ## Service Port Map & Gateway Routes
 
-| Gateway Path                       | Target Service       | Backend Port |
-|------------------------------------|----------------------|--------------|
-| `/api/v1/users/**`                 | Customer Service     | 8081         |
-| `/api/v1/orders/**`                | Customer Service     | 8081         |
-| `/api/v1/shipments/**`             | Shipment Service     | 8084         |
-| `/api/v1/deliveries/**`            | Delivery Service     | 8082         |
-| `/api/v1/events/stream`            | Notification Service | 8083         |
+All services register with **Eureka Server** (port 8761). The Gateway uses `lb://` (load-balanced) URIs resolved via Eureka instead of hardcoded hostnames.
+
+| Gateway Path                       | Target Service       | Eureka Service ID     |
+|------------------------------------|----------------------|-----------------------|
+| `/api/v1/users/**`                 | Customer Service     | `customer-service`    |
+| `/api/v1/orders/**`                | Customer Service     | `customer-service`    |
+| `/api/v1/shipments/**`             | Shipment Service     | `shipment-service`    |
+| `/api/v1/deliveries/**`            | Delivery Service     | `delivery-service`    |
+| `/api/v1/events/stream`            | Notification Service | `notification-service`|
 
 All external traffic goes through the Gateway on **port 8086**.
 
