@@ -5,8 +5,21 @@ import '../../models/shipment.dart';
 import '../../models/shipment_status.dart';
 import 'widgets/shipment_card.dart';
 
-class SellerScreen extends StatelessWidget {
+class SellerScreen extends StatefulWidget {
   const SellerScreen({super.key});
+
+  @override
+  State<SellerScreen> createState() => _SellerScreenState();
+}
+
+class _SellerScreenState extends State<SellerScreen> {
+
+
+  @override
+  void initState() {
+    context.read<ShipmentCubit>().loadShipments();
+    super.initState();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +71,9 @@ class _SellerBodyState extends State<_SellerBody>
 
   @override
   void initState() {
+
     super.initState();
+
     _tabCtrl = TabController(length: _tabs.length, vsync: this);
     _tabCtrl.addListener((){
       setState(() {

@@ -5,8 +5,21 @@ import '../../models/delivery.dart';
 import '../../models/delivery_status.dart';
 import 'widgets/delivery_card.dart';
 
-class DeliveryScreen extends StatelessWidget {
+class DeliveryScreen extends StatefulWidget {
   const DeliveryScreen({super.key});
+
+  @override
+  State<DeliveryScreen> createState() => _DeliveryScreenState();
+}
+
+class _DeliveryScreenState extends State<DeliveryScreen> {
+
+
+  @override
+  void initState() {
+    context.read<DeliveryCubit>().loadDeliveries();
+    super.initState();
+  }
 
   @override
   Widget build(BuildContext context) {
