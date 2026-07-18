@@ -171,6 +171,75 @@ event: DeliveryStarted
 
 ---
 
+## Monitoring with AKHQ
+
+AKHQ is available at [http://localhost:8085](http://localhost:8085). Use it to:
+
+- **View topics**: Check all Kafka topics including retry and DLT topics
+- **Inspect messages**: Browse messages in any topic including `dead-letter-events`
+- **Monitor consumer groups**: Check consumer lag for each service
+- **Replay dead letters**: Re-publish messages from DLT topics back to original topics
+
+### Topics Created After Running
+
+Once the application runs and produces/consumes messages, the following topics will exist:
+
+| Topic | Purpose |
+|-------|---------|
+| `order-events` | Main order events (produced by customer-service) |
+| `order-events-retry-0` | First retry for order events |
+| `order-events-retry-1` | Second retry for order events |
+| `order-events-retry-2` | Third retry for order events |
+| `order-events-dlt` | Dead letter topic for order events |
+| `shipment-events` | Main shipment events (produced by shipment-service) |
+| `shipment-events-retry-0` | First retry for shipment events |
+| `shipment-events-retry-1` | Second retry for shipment events |
+| `shipment-events-retry-2` | Third retry for shipment events |
+| `shipment-events-dlt` | Dead letter topic for shipment events |
+| `delivery-events` | Main delivery events (produced by delivery-service) |
+| `delivery-events-retry-0` | First retry for delivery events |
+| `delivery-events-retry-1` | Second retry for delivery events |
+| `delivery-events-retry-2` | Third retry for delivery events |
+| `delivery-events-dlt` | Dead letter topic for delivery events |
+| `dead-letter-events` | Centralized dead letter event log (all services) |
+
+---
+
+## Testing the Retry + DLT Pattern
+
+### Test: Transient Failure (DB Down)
+
+```bash
+# 1. Start everything
+docker compose up --build
+
+# 2. Connect SSE to monitor events
+curl -N http://localhost:8086/api/v1/events/stream &
+
+# 3. Simulate shipment-db failure
+docker compose stop shipment-db
+
+# 4. Create an order (will fail in shipment-service)
+curl -s -X POST http://localhost:8086/api/v1/orders \
+  -H "Content-Type: application/json" \
+  -d '{"userId":1,"totalAmount":99.99}'
+
+# 5. Watch the retry pattern in shipment-service logs
+docker compose logs -f shipment-service
+# Expected: error → retry-0 → retry-1 → retry-2 → DLT
+
+# 6. Verify in AKHQ at http://localhost:8085
+# Topics → order-events-dlt → should have 1 message
+# Topics → dead-letter-events → should have 1 DeadLetterEvent
+
+# 7. Restart DB and replay
+docker compose start shipment-db
+# Wait for DB health check to pass
+# Re-publish the message from order-events-dlt via AKHQ
+```
+
+---
+
 ## Troubleshooting
 
 | Problem                          | Check                                                                  |
@@ -183,3 +252,5 @@ event: DeliveryStarted
 | AKHQ shows no topics            | Access AKHQ at http://localhost:8085 to inspect topics and consumer groups |
 | Port conflicts                   | Change exposed ports in `docker-compose.yml` if ports 8081-8086 are in use |
 | `kafka:9092` connection error   | In local mode, update `spring.kafka.bootstrap-servers` to `localhost:9092` |
+| Messages going to DLT            | Check the DeadLetterEvent in `dead-letter-events` topic via AKHQ for the error reason |
+| Retry topics not appearing       | They are auto-created when a message first fails. Trigger a failure to create them. |

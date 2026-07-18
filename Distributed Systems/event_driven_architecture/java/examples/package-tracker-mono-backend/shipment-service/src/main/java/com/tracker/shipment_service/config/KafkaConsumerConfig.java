@@ -9,9 +9,7 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.ContainerProperties;
-import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
-import org.springframework.util.backoff.ExponentialBackOff;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -46,10 +44,6 @@ public class KafkaConsumerConfig {
         factory.setConsumerFactory(orderCreatedEventConsumerFactory());
         factory.setConcurrency(3);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
-
-        ExponentialBackOff backOff = new ExponentialBackOff(1000L, 2.0);
-        backOff.setMaxElapsedTime(30000L);
-        factory.setCommonErrorHandler(new DefaultErrorHandler(backOff));
         return factory;
     }
 }

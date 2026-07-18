@@ -1,6 +1,8 @@
-com/tracker/common_events/OrderCreatedEvent$OrderCreatedEventBuilder.class
+com/tracker/common_events/DeadLetterEvent.class
 com/tracker/common_events/OrderCreatedEvent.class
-com/tracker/common_events/DeliveryStartedEvent$DeliveryStartedEventBuilder.class
 com/tracker/common_events/DeliveryStartedEvent.class
 com/tracker/common_events/ShipmentStartedEvent.class
 com/tracker/common_events/ShipmentStartedEvent$ShipmentStartedEventBuilder.class
+com/tracker/common_events/DeadLetterEvent$DeadLetterEventBuilder.class
+com/tracker/common_events/OrderCreatedEvent$OrderCreatedEventBuilder.class
+com/tracker/common_events/DeliveryStartedEvent$DeliveryStartedEventBuilder.class

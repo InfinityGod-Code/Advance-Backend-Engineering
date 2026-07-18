@@ -35,4 +35,19 @@ public class KafkaProducerConfig {
     public KafkaTemplate<String, DeliveryStartedEvent> deliveryKafkaTemplate() {
         return new KafkaTemplate<>(deliveryStartedEventProducerFactory());
     }
+
+    @Bean
+    public ProducerFactory<String, Object> retryableTopicProducerFactory() {
+        Map<String, Object> config = new HashMap<>();
+        config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+        config.put(ProducerConfig.ACKS_CONFIG, "all");
+        return new DefaultKafkaProducerFactory<>(config);
+    }
+
+    @Bean
+    public KafkaTemplate<String, Object> retryableTopicKafkaTemplate() {
+        return new KafkaTemplate<>(retryableTopicProducerFactory());
+    }
 }
