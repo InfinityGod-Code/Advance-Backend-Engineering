@@ -36,6 +36,19 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 3
         writable-stack-trace-enabled: true
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,circuitbreakers,circuitbreakerevents
+  endpoint:
+    health:
+      show-details: always
+    circuitbreakers:
+      enabled: true
+    circuitbreakerevents:
+      enabled: true
+
 logging:
   level:
     org.springframework.cloud.gateway: DEBUG

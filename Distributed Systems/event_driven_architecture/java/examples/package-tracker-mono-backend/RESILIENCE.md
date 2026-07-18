@@ -167,10 +167,87 @@ curl -s -w "\n%{http_code}" http://localhost:8086/api/v1/users/1
 
 ### Check Circuit Breaker State via Actuator
 
+Actuator is configured on the gateway with the following endpoints exposed in `application.yml`:
+
+```yaml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,circuitbreakers,circuitbreakerevents
+  endpoint:
+    health:
+      show-details: always
+    circuitbreakers:
+      enabled: true
+    circuitbreakerevents:
+      enabled: true
+```
+
+Query the live circuit breaker state:
+
 ```bash
-# If actuator is enabled, you can check CB state:
+# Health endpoint (includes circuit breaker details)
 curl -s http://localhost:8086/actuator/health | jq
+# {
+#   "status": "UP",
+#   "components": {
+#     "circuitBreakers": {
+#       "status": "UP",
+#       "details": {
+#         "customerServiceCB": { "status": "CLOSED", "details": { "failureRate": "-1.0%", ... } },
+#         "shipmentServiceCB": { "status": "CLOSED", ... },
+#         "deliveryServiceCB":  { "status": "CLOSED", ... }
+#       }
+#     }
+#   }
+# }
+
+# List all circuit breaker instances
 curl -s http://localhost:8086/actuator/circuitbreakers | jq
+# {
+#   "circuitBreakers": ["customerServiceCB", "shipmentServiceCB", "deliveryServiceCB"]
+# }
+
+# Detailed state of a specific circuit breaker
+curl -s http://localhost:8086/actuator/circuitbreakerinstances/customerServiceCB | jq
+# {
+#   "circuitBreakerName": "customerServiceCB",
+#   "state": "CLOSED",
+#   "failureRate": -1.0,
+#   "failureRateThreshold": 50.0,
+#   "slowCallRate": -1.0,
+#   "slowCallRateThreshold": 100.0,
+#   "bufferedCalls": 0,
+#   "failedCalls": 0,
+#   "slowCalls": 0,
+#   "slowFailedCalls": 0,
+#   "notPermittedCalls": 0
+# }
+```
+
+**State transition monitoring with actuator:**
+```bash
+# When circuit is OPEN (after 5+ failures):
+curl -s http://localhost:8086/actuator/health | jq '.components.circuitBreakers.details.customerServiceCB'
+# → { "status": "CIRCUIT_OPEN", "details": { "failureRate": "60.0%", ... } }
+
+# When circuit is HALF_OPEN (probing):
+# → { "status": "CIRCUIT_HALF_OPEN", ... }
+
+# When circuit is CLOSED (healthy):
+# → { "status": "CLOSED", "details": { "failureRate": "-1.0%", ... } }
+```
+
+The `circuitbreakerevents` endpoint shows recent state transitions:
+```bash
+curl -s http://localhost:8086/actuator/circuitbreakerevents/customerServiceCB | jq
+# {
+#   "circuitBreakerEvents": [
+#     { "circuitBreakerName": "customerServiceCB", "type": "STATE_TRANSITION",
+#       "creationTime": "...", "stateTransition": "CLOSED → OPEN", ... }
+#   ]
+# }
 ```
 
 ### Monitoring Logs
