@@ -25,6 +25,17 @@ spring:
             allowed-headers: "*"
             allow-credentials: false
 
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        writable-stack-trace-enabled: true
+
 logging:
   level:
     org.springframework.cloud.gateway: DEBUG

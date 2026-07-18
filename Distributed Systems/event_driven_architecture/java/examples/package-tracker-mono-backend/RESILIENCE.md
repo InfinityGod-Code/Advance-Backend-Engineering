@@ -1,4 +1,188 @@
-# Resilience: Retry + Dead Letter Topic (DLT) Pattern
+# Resilience: Circuit Breaker + Retry + Dead Letter Topic (DLT)
+
+This system uses two complementary resilience patterns at different layers of the architecture:
+
+| Layer | Pattern | Protection Against |
+|-------|---------|-------------------|
+| **API Gateway** (edge) | **Circuit Breaker** | Downstream service outages — fail fast with 503 instead of hanging |
+| **Kafka Consumers** (internal) | **Retry + DLT** | Transient failures (DB down, network) — retry with backoff, then quarantine in DLT |
+
+---
+
+# Circuit Breaker Pattern (Gateway)
+
+## Why Only at the Gateway?
+
+The gateway is the only place where **synchronous HTTP calls** happen. When a downstream service is down:
+
+- **Without circuit breaker**: the gateway hangs on the connection until timeout, exhausting the Netty connection pool and making the gateway itself vulnerable
+- **With circuit breaker**: after N consecutive failures, the circuit opens and the gateway immediately returns a structured 503 response without even attempting the connection
+
+**Kafka producers** don't need circuit breakers because `KafkaTemplate.send()` is non-blocking and Kafka's internal retries handle broker failures. **JPA repositories** don't need them because connection pool timeouts already fail fast, and the Retry + DLT pattern on the consumer side handles DB failures there.
+
+## Architecture
+
+```
+                        ┌───────────────┐
+Client ──→ Gateway ────→ Circuit Breaker ────→ customer-service
+                        │     │
+                        │     └── CLOSED (normal): passthrough
+                        │     └── OPEN (failing): return 503 fallback
+                        │     └── HALF_OPEN (probing): allow 1, then decide
+                        │
+                        ├── Circuit Breaker ────→ shipment-service
+                        │
+                        └── Circuit Breaker ────→ delivery-service
+                        
+    (SSE stream → notification-service — no circuit breaker, long-lived connection)
+```
+
+## Implementation
+
+### 1. Dependency
+
+```xml
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-circuitbreaker-reactor-resilience4j</artifactId>
+</dependency>
+```
+
+### 2. Route Configuration with Circuit Breaker (GatewayServiceApplication.java)
+
+Each HTTP route (except SSE) wraps in a `circuitBreaker` filter with a named instance and a fallback URI:
+
+```java
+.route("customer-service", r -> r
+    .path("/api/v1/users/**", "/api/v1/orders/**")
+    .filters(f -> f.circuitBreaker(config -> config
+            .setName("customerServiceCB")
+            .setFallbackUri("forward:/fallback/customer-service")))
+    .uri("lb://customer-service"))
+```
+
+The SSE route for `notification-service` is intentionally excluded — SSE connections are long-lived and don't benefit from circuit breaking.
+
+### 3. Fallback Controller (FallbackController.java)
+
+```java
+@RestController
+public class FallbackController {
+
+    private static final Logger log = LoggerFactory.getLogger(FallbackController.class);
+
+    @GetMapping("/fallback/customer-service")
+    public Mono<Map<String, Object>> customerServiceFallback() {
+        log.warn("Circuit breaker triggered for customer-service — returning 503 fallback");
+        return Mono.just(Map.of(
+                "status", 503,
+                "error", "Service Unavailable",
+                "message", "customer-service is temporarily unavailable. Please try again later."
+        ));
+    }
+    // ... shipment-service, delivery-service
+}
+```
+
+### 4. Resilience4J Configuration (application.yml)
+
+```yaml
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        writable-stack-trace-enabled: true
+```
+
+### Configuration Breakdown
+
+| Setting | Value | Meaning |
+|---------|-------|---------|
+| `sliding-window-size` | 10 | Count last 10 calls to evaluate health |
+| `minimum-number-of-calls` | 5 | Don't trip until at least 5 calls recorded |
+| `failure-rate-threshold` | 50 | Trip when ≥50% of calls fail |
+| `wait-duration-in-open-state` | 30s | Stay OPEN for 30s before trying HALF_OPEN |
+| `permitted-number-of-calls-in-half-open-state` | 3 | In HALF_OPEN, allow 3 probe calls before deciding |
+
+## Circuit Breaker States
+
+```
+                    ┌──────────┐
+         ┌─────────→│  CLOSED  │←──────── normal operation
+         │          └─────┬────┘
+         │                │ failure rate > 50%
+         │                ▼
+         │          ┌──────────┐
+         │          │   OPEN   │────────── requests fail immediately with 503
+         │          └─────┬────┘
+         │                │ 30s timeout
+         │                ▼
+         │          ┌──────────┐
+         │          │ HALF_OPEN│────────── probe: 3 requests pass through
+         │          └─────┬────┘
+         │                │
+         ├── success ────→┤
+         │                │ failure again
+         └────────────────┘
+```
+
+## Testing the Circuit Breaker
+
+### Manual End-to-End Test
+
+```bash
+# 1. Start everything
+docker compose up --build
+
+# 2. Stop a service to trigger circuit breaker
+docker compose stop customer-service
+
+# 3. Make several requests to trigger CB (5 failures = minimum threshold)
+for i in $(seq 1 6); do
+  curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8086/api/v1/users
+done
+
+# Expected output:
+# 500 (first few — before circuit opens)
+# 503 (after circuit opens — fast failure)
+
+# 4. Check gateway logs
+docker compose logs gateway-service
+# Expected:
+# "Circuit breaker triggered for customer-service — returning 503 fallback"
+
+# 5. Restart the service
+docker compose start customer-service
+
+# 6. Wait 30s (HALF_OPEN timeout), then request again — should recover
+sleep 30
+curl -s -w "\n%{http_code}" http://localhost:8086/api/v1/users/1
+# Expected: 200 + user data (circuit closed again)
+```
+
+### Check Circuit Breaker State via Actuator
+
+```bash
+# If actuator is enabled, you can check CB state:
+curl -s http://localhost:8086/actuator/health | jq
+curl -s http://localhost:8086/actuator/circuitbreakers | jq
+```
+
+### Monitoring Logs
+
+Each circuit breaker trip produces a structured log entry:
+```
+WARN  [FallbackController] Circuit breaker triggered for customer-service — returning 503 fallback
+```
+
+---
+
+# Retry + Dead Letter Topic (DLT) Pattern
 
 ## Overview
 
